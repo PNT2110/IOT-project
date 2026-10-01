@@ -1,0 +1,31 @@
+[Unit]
+Description=IOT Drone Station API
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=iot-drone
+Group=iot-drone
+SupplementaryGroups=dialout
+WorkingDirectory=/home/pi5/iot-drone/backend
+EnvironmentFile=/etc/iot-drone/drone.env
+ExecStart=/opt/iot-drone/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/iot-drone
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target

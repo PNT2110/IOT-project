@@ -1,0 +1,24 @@
+# SCOPE-04 Owner Acceptance Packet
+
+Status: `NOT_ISSUABLE — REPLACED BY BOUNDED EVIDENCE REQUEST`
+
+The current gate audit found one authoritative hard acceptance item without
+direct live evidence: local web/camera/cache operation while upstream is down.
+Therefore this is a routing record, not a pre-filled acceptance. Use
+[SCOPE04_OFFLINE_LOCAL_EVIDENCE_REQUEST.md](SCOPE04_OFFLINE_LOCAL_EVIDENCE_REQUEST.md)
+for the smallest next decision.
+
+```text
+SCOPE04_OWNER_DECISION=<OWNER FILL: ACCEPT | REQUIRE_MORE_EVIDENCE>
+ACCEPT_REPOSITORY_IMPLEMENTATION=<OWNER FILL>
+ACCEPT_BOUNDED_PI_SMOKE=<OWNER FILL>
+ACCEPT_SECURITY_BOUNDARY=<OWNER FILL>
+ACCEPT_RESOURCE_SMOKE_EVIDENCE=<OWNER FILL>
+ACCEPT_EXTERNAL_BROWSER_NOT_RUN_IF_OPTIONAL=<OWNER FILL>
+ACCEPT_SYSTEMD_AUTOSTART_DEFERRED_IF_OPTIONAL=<OWNER FILL>
+ACCEPT_PERSISTENT_AUTH_DEFERRED_IF_OPTIONAL=<OWNER FILL>
+ACCEPT_OFFLINE_GATE_EVIDENCE_CLASS=<OWNER FILL>
+```
+
+No password, PSK, OTP/TOTP, private key, recovery code or secret is requested
+by this packet.

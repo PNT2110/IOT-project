@@ -1,0 +1,7 @@
+Stopped api (pid 24068)
+Stopped web (pid 17764)
+INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
+INFO  [alembic.runtime.migration] Will assume non-transactional DDL.
+Default owner already exists; nothing changed.
+PC server is up: http://127.0.0.1:5173  (public: https://desktop-ja7nurv.tail7a4c6f.ts.net)
+Logs: C:\Users\pnt21\Desktop\IOT\runtime\pc

@@ -1,0 +1,128 @@
+# SCOPE-05 Pi 5 Access Discovery
+
+Assessment date: `2026-09-26` (Asia/Ho_Chi_Minh).
+
+## Policy and scope
+
+```text
+OWNER_POLICY=AUTO_ONLY_NO_OWNER_INTERACTION
+CURRENT_USB_HOST=RASPBERRY_PI_5
+LAN_SCAN=NOT_PERFORMED
+CREDENTIAL_GUESSING=NOT_PERFORMED
+PASSWORD_SECRET_DISCOVERY=NOT_PERFORMED
+```
+
+Only pre-existing Tailscale state, SSH configuration, SSH-agent state and
+repository configuration were inspected. No network scan, password prompt,
+vault/browser-secret access, `sshpass`, network configuration change or
+hardware action was attempted.
+
+## Existing access paths
+
+```text
+TAILSCALE=NOT_INSTALLED
+SSH_CONFIG=/home/pnt/.ssh/config ABSENT
+SSH_AGENT=KEY_PRESENT
+PROJECT_PI_SSH_CANDIDATE=NOT_FOUND
+PASSIVE_MDNS_CANDIDATE=pitan.local -> 192.168.1.118
+```
+
+The current local shell is `pnt-MS-7D48` on Ubuntu x86_64. The passive local
+candidate `pitan.local` / `192.168.1.118` was tested once with the declared
+`pitan` account and existing SSH key only; authentication was denied by
+public-key authentication. No password was attempted.
+
+## Result
+
+```text
+PI5_SHELL_UNAVAILABLE
+PI5_DISCOVERY_METHOD=PASSIVE_MDNS_AND_NEIGHBOR
+PI5_CANDIDATE_IPS=192.168.1.118
+PI5_AUTH_METHOD=EXISTING_SSH_KEY_ONLY
+PI5_AUTH_STATE=NO_NONINTERACTIVE_AUTHORIZED_PATH
+PI5_USB_EVIDENCE=NOT_COLLECTED
+PI5_USB_DIAGNOSIS=BLOCKED_NO_EXISTING_AUTHORIZED_SHELL
+NEXT_GATE=ONE_TIME_PI_ACCESS_BOOTSTRAP_REQUIRED
+FLASH_GATE=BLOCKED
+```
+
+The previous PC USB results remain historical and are not substituted for
+Pi-host evidence.
+
+## Current authenticated Pi session
+
+```text
+PI5_SHELL=AVAILABLE
+PI5_AUTH_METHOD=OWNER_SUPPLIED_PASSWORD
+PI5_KEY_AUTH=FAILED
+USB_DIAG_HOST=RASPBERRY_PI_5
+PI5_HOSTNAME=pitan
+PI5_MODEL=Raspberry Pi 5 Model B Rev 1.0
+```
+
+The supplied password was used only for this session and is not recorded.
+
+## Dedicated-key bootstrap update
+
+```text
+PI5_AUTOMATION_KEY_FINGERPRINT=SHA256:VrUiXWY9kkxBKt+BwjXv6NMBtsUxOl8kxBXR+rv46i4
+PI5_KEYPAIR_PREPARED=yes
+PI5_KEY_INSTALLATION=BLOCKED_REQUIRES_ONE_TIME_OWNER_BOOTSTRAP
+PI5_SHELL=UNAVAILABLE
+PI5_AUTH_METHOD=DEDICATED_SCOPE05_SSH_KEY_PENDING_INSTALLATION
+NEXT_GATE=PI5_AUTONOMOUS_USB_HOST_DIAGNOSIS
+FLASH_GATE=BLOCKED
+```
+
+## Validation result
+
+```text
+PI5_KEY_AUTH=FAILED
+PI5_SSH_RESULT=PERMISSION_DENIED_PUBLICKEY
+PI5_KEY_INSTALLATION=OWNER_CLAIMED_COMPLETE_KEY_AUTH_FAILED
+PI5_SHELL=UNAVAILABLE
+PI5_USB_EVIDENCE=NOT_COLLECTED
+NEXT_GATE=PI5_KEY_INSTALLATION_RECONCILIATION
+FLASH_GATE=BLOCKED
+```
+
+## Verbose key-auth update
+
+```text
+LOCAL_PRIVATE_PUBLIC_MATCH=yes
+LOCAL_PUBLIC_FINGERPRINT_MATCH=yes
+EXPECTED_KEY_OFFERED=yes
+SERVER_ACCEPTED_KEY=no
+PI5_KEY_AUTH=FAILED
+PI5_KEY_RECONCILIATION=FAILED_SERVER_SIDE_KEY_INSTALLATION_REQUIRES_RECONCILIATION
+NEXT_GATE=PI5_LOCAL_AUTHORIZED_KEYS_RECONCILIATION
+FLASH_GATE=BLOCKED
+```
+
+```text
+PI5_LOCAL_USER=NOT_COLLECTED
+AUTHORIZED_KEY_EXACT_MATCH=NOT_COLLECTED
+AUTHORIZED_KEY_FINGERPRINT_MATCH=NOT_COLLECTED
+SSH_DIR_OWNER_MODE=NOT_COLLECTED
+AUTHORIZED_KEYS_OWNER_MODE=NOT_COLLECTED
+SSHD_PUBKEYAUTH=NOT_COLLECTED
+PI5_KEY_AUTH=FAILED
+NEXT_GATE=PI5_LOCAL_AUTHORIZED_KEYS_RECONCILIATION_REQUIRES_PI_LOCAL_EXECUTION
+FLASH_GATE=BLOCKED
+```
+
+## 2026-09-27 dedicated-key repair result
+
+Using the already authenticated Pi session, the user-owned
+`/home/pitan/.ssh/authorized_keys` path was normalized and the existing public
+key was inserted exactly once. The dedicated-key retry succeeded in
+`BatchMode` without password fallback.
+
+```text
+PI5_KEY_AUTH=PASS
+PI5_SSH_RESULT=KEY_AUTH_OK
+PI5_SHELL=AVAILABLE
+PI5_HOSTNAME=pitan
+NEXT_GATE=BUILD_COMPATIBILITY_FIX
+FLASH_GATE=BLOCKED
+```
