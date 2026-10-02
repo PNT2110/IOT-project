@@ -44,7 +44,8 @@ Payload:
 | `applicant_full_name` | string | Full name |
 | `license_code` | string | Pilot licence code |
 | `flight_date` | `YYYY-MM-DD` | Vietnam local date |
-| `flight_time` | `HH:MM` | Vietnam local time |
+| `flight_time` | `HH:MM` | Start of the flight window, Vietnam local time |
+| `flight_end_time` | `HH:MM` or absent | End of the window, same day, after `flight_time`; absent means one hour |
 | `vehicle` | string | Selected aircraft |
 | `pi_username` | string | Pi account that filled in the form |
 | `gps` | object or `null` | `{lat, lon, fix_state, satellites}` from the ESP32; `null` when there is no fix |

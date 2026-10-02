@@ -23,7 +23,7 @@ if ($LASTEXITCODE -ne 0) { throw "SSH key login to $target failed. Install this 
 
 $pkg = Join-Path $env:TEMP "iot-pi.tgz"
 Push-Location $root
-try { & tar -czf $pkg --exclude=__pycache__ --exclude=pi.env --exclude=pi.env.example edge/pi5 firmware/FC_can_bang contracts ops/pi5/pi-setup.sh ops/pi5/pi-network.sh }
+try { & tar -czf $pkg --exclude=__pycache__ --exclude=pi.env --exclude=pi.env.example edge/pi5 firmware/FC_can_bang contracts ops/pi5/pi-setup.sh ops/pi5/pi-network.sh ops/pi5/pi-wifi-permission.sh }
 finally { Pop-Location }
 if ($LASTEXITCODE -ne 0) { throw "Packaging failed." }
 

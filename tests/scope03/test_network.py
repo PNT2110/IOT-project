@@ -25,17 +25,14 @@ def test_status_parses_nmcli():
         "device show wlan1": (0, "IP4.ADDRESS[1]:192.168.1.50/24\n", ""),
     })
     status = NmcliAdapter(run=run, upstream_iface="wlan1", ap_iface="wlan0").status()
-    assert status == {"upstream_connected": True, "iface": "wlan1", "ssid": "Home:5G", "ip": "192.168.1.50"}
+    assert status == {"upstream_connected": True, "iface": "wlan1", "ssid": "Home:5G", "ip": "192.168.1.50", "wired": False}
 
 
-def test_status_disconnected_and_ethernet_upstream():
-    offline = FakeRun({"device status": (0, "wlan0:wifi:connected:F450\nwlan1:wifi:disconnected:--\n", "")})
-    assert NmcliAdapter(run=offline).status() == {"upstream_connected": False, "iface": "wlan1", "ssid": None, "ip": None}
-    wired = FakeRun({
-        "device status": (0, "wlan0:wifi:connected:F450\nwlan1:wifi:disconnected:--\neth0:ethernet:connected:Wired connection 1\n", ""),
-        "device show eth0": (0, "IP4.ADDRESS[1]:10.0.0.7/24\n", ""),
-    })
-    assert NmcliAdapter(run=wired).status() == {"upstream_connected": True, "iface": "eth0", "ssid": None, "ip": "10.0.0.7"}
+def test_status_ignores_ethernet_and_reports_it_separately():
+    offline = FakeRun({"device status": (0, "ap0:wifi:connected:F450\nwlan1:wifi:disconnected:--\n", "")})
+    assert NmcliAdapter(run=offline).status() == {"upstream_connected": False, "iface": "wlan1", "ssid": None, "ip": None, "wired": False}
+    wired = FakeRun({"device status": (0, "ap0:wifi:connected:F450\nwlan1:wifi:disconnected:--\neth0:ethernet:connected:Wired connection 1\n", "")})
+    assert NmcliAdapter(run=wired).status() == {"upstream_connected": False, "iface": "wlan1", "ssid": None, "ip": None, "wired": True}
 
 
 def test_status_survives_missing_nmcli():
@@ -75,5 +72,7 @@ def test_connect_wrong_password_returns_error():
     assert NmcliAdapter(run=run).connect("Home", "wrongpass1") == {"ok": False, "error": "WRONG_PASSWORD"}
     missing = FakeRun({"wifi connect": (10, "", "Error: No network with SSID 'Home' found.")})
     assert NmcliAdapter(run=missing).connect("Home", "password123") == {"ok": False, "error": "NETWORK_NOT_FOUND"}
+    denied = FakeRun({"wifi connect": (4, "", "Error: Failed to add/activate new connection: Not authorized to control networking.")})
+    assert NmcliAdapter(run=denied).connect("Home", "password123") == {"ok": False, "error": "NOT_AUTHORIZED"}
     other = FakeRun({"wifi connect": (1, "", "Error: something else")})
     assert NmcliAdapter(run=other).connect("Home", "password123") == {"ok": False, "error": "CONNECT_FAILED"}

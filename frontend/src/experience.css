@@ -270,3 +270,45 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .workspace-grid .map-search-row { flex-wrap: wrap; }
 .workspace-grid .map-search-row input { min-width: 180px; }
 .editor-card .editor-actions { margin: 4px 0 20px; }
+
+/* Sign-in card: brand, step indicator */
+.auth-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+.auth-brand img { width: 54px; height: 40px; object-fit: contain; }
+.auth-brand strong { display: block; font-size: .82rem; letter-spacing: .12em; }
+.auth-brand small { color: var(--muted); font-size: .78rem; }
+.stepper { display: flex; align-items: center; gap: 8px; margin: 0 0 20px; padding: 0; list-style: none; font-size: .8rem; color: var(--muted); }
+.stepper li { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+.stepper li + li::before { content: ""; width: 18px; height: 1px; background: #bfd2df; }
+.stepper b { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; border: 1px solid #bfd2df; font-size: .74rem; font-weight: 700; }
+.stepper li[aria-current="step"] { color: var(--ink); font-weight: 650; }
+.stepper li[aria-current="step"] b { border-color: var(--blue-deep); background: var(--blue-deep); color: #fff; }
+.stepper li.done b { border-color: #137a55; background: #e6f4ee; color: #137a55; }
+@media (max-width: 420px) { .stepper span { display: none; } .stepper li[aria-current="step"] span { display: inline; } }
+
+.modal-content.auth-card { width: min(100%, 440px); padding: clamp(22px, 4vw, 32px); border-radius: 16px; }
+.auth-card .auth-heading { align-items: flex-start; margin-bottom: 0; }
+.auth-card .auth-brand { margin-bottom: 14px; }
+.auth-card .auth-title { margin: 0 0 6px; color: var(--ink); font-size: 1.5rem; font-weight: 700; letter-spacing: -.02em; }
+.auth-card .auth-sub { margin: 0 0 18px; color: var(--muted); font-size: .92rem; line-height: 1.5; }
+.auth-card .auth-form { gap: 14px; }
+.auth-card .auth-form .terms-row { align-items: flex-start; margin-top: 2px; }
+.auth-card .auth-form .terms-row > input[type="checkbox"] { margin-top: 2px; accent-color: var(--blue-deep); }
+.auth-card .primary-button { font-weight: 650; }
+.auth-card .primary-button:disabled { border-color: #c9dbe7; background: #dbe8f1; color: #6b8599; }
+.auth-card .auth-switch { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: .9rem; }
+.auth-card .auth-switch button { min-height: 0; padding: 0 0 0 4px; }
+.auth-card .auth-title { margin-bottom: 16px; }
+.auth-form .terms-row .terms-copy label { display: inline; margin: 0; color: inherit; font: inherit; }
+.auth-form .terms-row .terms-copy { white-space: nowrap; }
+@media (max-width: 380px) { .auth-form .terms-row .terms-copy { white-space: normal; } }
+
+/* Account menu sits at the right edge of the top bar. */
+.topbar .auth-actions { margin-left: auto; }
+.account-popover { right: 0; left: auto; }
+/* Keep Leaflet's own z-indexes inside the map so it scrolls under the sticky bars. */
+.map-canvas-wrap { position: relative; z-index: 0; isolation: isolate; }
+/* Map tools start below Leaflet's zoom buttons instead of on top of them. */
+.map-canvas-wrap .leaflet-top.leaflet-right .leaflet-control-zoom { margin: 14px 14px 0 0; }
+.map-actions { top: 92px; right: 14px; }
+.profile-overlay { z-index: 2200; overflow-y: auto; }
+@media (max-width: 760px) { .map-actions { top: 90px; right: 12px; } .map-canvas-wrap .leaflet-top.leaflet-right .leaflet-control-zoom { margin: 12px 12px 0 0; } }

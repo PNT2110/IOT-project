@@ -178,9 +178,10 @@ export function AuthPanel({ onAuthenticated, onClose, initialBootstrapChallengeI
     <div className="modal-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="modal-content auth-card" role="dialog" aria-modal="true" aria-label="Xác thực tài khoản">
         <div className="auth-heading">
-          <div><h2>{stage === "credentials" ? mode === "login" ? "Đăng nhập" : "Đăng ký tài khoản" : factorTitle}</h2></div>
+          <div className="auth-brand"><img src="/logo-drone-zone-check.png" alt="" /><div><strong>DRONE ZONE CHECK</strong><small>Bản đồ vùng bay</small></div></div>
           <button ref={closeButtonRef} type="button" onClick={onClose} aria-label="Đóng">×</button>
         </div>
+        <h2 className="auth-title">{stage === "credentials" ? mode === "login" ? "Đăng nhập" : "Đăng ký tài khoản" : factorTitle}</h2>
         {stage === "credentials" ? (
           <form className="auth-form" onSubmit={submit}>
             <label>{mode === "login" ? "Tài khoản" : "Tên tài khoản"}<input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" minLength={3} maxLength={mode === "login" ? 320 : 32} pattern={mode === "register" ? "[A-Za-z0-9_.\\-]{3,32}" : undefined} title={mode === "register" ? "3–32 ký tự: chữ không dấu, số, dấu _ . -" : undefined} required /></label>
@@ -188,7 +189,7 @@ export function AuthPanel({ onAuthenticated, onClose, initialBootstrapChallengeI
             <label>Mật khẩu{mode === "register" ? " (ít nhất 12 ký tự)" : ""}<input type="password" minLength={mode === "register" ? 12 : undefined} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} required /></label>
             {mode === "register" && <label>Nhập lại mật khẩu<input type="password" value={passwordConfirm} onChange={(event) => setPasswordConfirm(event.target.value)} autoComplete="new-password" required /></label>}
             <div className="terms-row"><input id="pc-terms-accepted" type="checkbox" checked={terms} onChange={(event) => setTerms(event.target.checked)} /><span className="terms-copy"><label htmlFor="pc-terms-accepted">Tôi đã đọc và đồng ý với </label><button className="terms-link" type="button" onClick={() => setTermsOpen(true)}>điều khoản sử dụng</button>.</span></div>
-            <button className="primary-button" type="submit" disabled={busy || !terms}>{busy ? "Đang xử lý…" : mode === "login" ? "Tiếp tục xác thực" : "Tạo tài khoản"}</button>
+            <button className="primary-button" type="submit" disabled={busy || !terms}>{busy ? "Đang xử lý…" : mode === "login" ? "Tiếp tục" : "Tạo tài khoản"}</button>
           </form>
         ) : stage === "complete" ? (
           <div className="auth-form auth-complete">
@@ -209,7 +210,7 @@ export function AuthPanel({ onAuthenticated, onClose, initialBootstrapChallengeI
         {recoveryCodes.length > 0 && stage !== "complete" && <div className="secret-warning"><strong>Mã khôi phục — lưu offline:</strong><code>{recoveryCodes.join(" · ")}</code></div>}
         {error && <div className="error-banner">{error}</div>}
         {notice && <div className="success-banner">{notice}</div>}
-        {stage === "credentials" && <div className="auth-switch"><button type="button" onClick={() => reset(mode === "login" ? "register" : "login")}>{mode === "login" ? "Tạo tài khoản mới" : "Đã có tài khoản? Đăng nhập"}</button></div>}
+        {stage === "credentials" && <div className="auth-switch">{mode === "login" ? "Chưa có tài khoản?" : "Đã có tài khoản?"}<button type="button" onClick={() => reset(mode === "login" ? "register" : "login")}>{mode === "login" ? "Đăng ký" : "Đăng nhập"}</button></div>}
       </section>
       {termsOpen && <div className="terms-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setTermsOpen(false); }}><section className="terms-dialog" role="dialog" aria-modal="true" aria-labelledby="terms-dialog-title"><div className="auth-heading"><h2 id="terms-dialog-title">Điều khoản sử dụng</h2><button ref={termsCloseButtonRef} type="button" onClick={() => setTermsOpen(false)} aria-label="Đóng điều khoản">×</button></div><div className="terms-body"><p>Đây là mô hình nghiên cứu của đồ án Drone Zone Check, không phải cổng thông tin chính thức của cơ quan nhà nước.</p><ol><li>Dữ liệu vùng cấm bay, hạn chế bay trên bản đồ do cán bộ của hệ thống vẽ và chỉ có giá trị tham khảo. Kết quả duyệt bay trong hệ thống không thay thế giấy phép bay của cơ quan có thẩm quyền.</li><li>Bạn chịu trách nhiệm về thông tin đã khai và về việc giữ bí mật mật khẩu, mã OTP, khóa 2FA và mã khôi phục của mình.</li><li>Hệ thống lưu tên tài khoản, email, nhật ký thao tác và thông tin trong đơn xin bay (họ tên, mã bằng lái, phương tiện, vị trí thiết bị) để vận hành và kiểm tra.</li><li>Tài khoản mới chỉ dùng được sau khi được duyệt, và có thể bị khóa nếu sử dụng sai mục đích.</li><li>Người điều khiển tự chịu trách nhiệm về an toàn bay và phải tuân thủ quy định pháp luật hiện hành về tàu bay không người lái.</li></ol></div></section></div>}
     </div>

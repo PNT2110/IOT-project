@@ -203,14 +203,14 @@ def test_user_gets_403_on_map_telemetry_firmware_flight():
     assert client.get("/api/pi/v1/camera/status").status_code == 200
     for path in ("/api/pi/v1/map/cache", "/api/pi/v1/telemetry", "/api/pi/v1/firmware/latest", "/api/pi/v1/admin/active", "/api/pi/v1/flight-requests", "/api/pi/v1/flight-options"):
         assert client.get(path).status_code == 403, path
-    body = {"full_name": "Alice", "license_code": "VN-1", "flight_date": "2026-10-02", "flight_time": "09:30", "vehicle": "F450 PNT PVD"}
+    body = {"full_name": "Alice", "license_code": "VN-1", "flight_date": "2026-10-02", "flight_time": "09:30", "flight_end_time": "10:30", "vehicle": "F450 PNT PVD"}
     assert client.post("/api/pi/v1/flight-requests", json=body, headers=csrf).status_code == 403
     assert client.post("/api/pi/v1/firmware/flash", json={"version": "v1"}, headers=csrf).status_code == 403
 
 
 def test_admin_flight_request_requires_csrf_and_has_no_arm_route():
     client, _, csrf = make_client()
-    body = {"full_name": "Alice Operator", "license_code": "VN-123", "flight_date": "2026-10-02", "flight_time": "09:30", "vehicle": "F450 PNT PVD"}
+    body = {"full_name": "Alice Operator", "license_code": "VN-123", "flight_date": "2026-10-02", "flight_time": "09:30", "flight_end_time": "10:30", "vehicle": "F450 PNT PVD"}
     assert client.get("/api/pi/v1/flight-options").json()["data"]["vehicles"] == ["F450 PNT PVD"]
     assert client.post("/api/pi/v1/flight-requests", json=body).status_code == 403
     created = client.post("/api/pi/v1/flight-requests", json=body, headers=csrf)

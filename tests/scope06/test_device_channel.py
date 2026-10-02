@@ -15,6 +15,7 @@ PAYLOAD = {
     "license_code": "UAV-123456",
     "flight_date": "2026-10-02",
     "flight_time": "09:30",
+    "flight_end_time": "10:15",
     "vehicle": "F450 PNT PVD",
     "pi_username": "pitan",
     "gps": {"lat": 10.7769, "lon": 106.7009, "fix_state": "VALID_FIX", "satellites": 9},
@@ -111,7 +112,8 @@ def test_submit_then_pending_then_approved(app, device, operator):
     details = item["request_details"]
     assert details["applicant_full_name"] == "Nguyen Van A"
     assert details["license_code"] == "UAV-123456"
-    assert details["flight_date"] == "2026-10-02" and details["flight_time"] == "09:30"
+    assert details["flight_date"] == "2026-10-02" and details["flight_time"] == "09:30" and details["flight_end_time"] == "10:15"
+    assert item["scheduled_start_at"].startswith("2026-10-02T02:30") and item["scheduled_end_at"].startswith("2026-10-02T03:15")
     assert details["vehicle"] == "F450 PNT PVD"
     assert details["gps"]["lat"] == 10.7769
 
@@ -150,6 +152,11 @@ def test_gps_null_accepted(app, device, operator):
 def test_invalid_payload_422(app, device):
     _, client = app
     assert submit(client, device, {**PAYLOAD, "flight_time": "25:99"}).status_code == 422
+    assert submit(client, device, {**PAYLOAD, "client_ref": "pi-req-0003", "flight_end_time": "09:30"}).status_code == 422
+    assert submit(client, device, {**PAYLOAD, "client_ref": "pi-req-0004", "flight_end_time": "08:00"}).status_code == 422
+    # Older Pi builds send no end time: the window defaults to one hour.
+    legacy = {key: value for key, value in PAYLOAD.items() if key != "flight_end_time"}
+    assert submit(client, device, {**legacy, "client_ref": "pi-req-0005"}).status_code == 201
     assert submit(client, device, {**PAYLOAD, "client_ref": "pi-req-0002", "applicant_full_name": "  "}).status_code == 422
 
 

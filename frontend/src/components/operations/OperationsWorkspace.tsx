@@ -159,7 +159,7 @@ export function OperationsWorkspace({ user, onPublicZonesChanged }: OperationsWo
   const flightCard = (flight: FlightRequest, actionable: boolean) => {
     const details = flight.request_details ?? {};
     const gps = details.gps && typeof details.gps.lat === "number" && typeof details.gps.lon === "number" ? { lat: details.gps.lat, lon: details.gps.lon } : null;
-    const when = details.flight_date ? `${details.flight_date} · ${details.flight_time ?? ""}` : new Date(flight.scheduled_start_at).toLocaleString("vi-VN");
+    const when = details.flight_date ? `${details.flight_date} · ${details.flight_time ?? ""}${details.flight_end_time ? ` – ${details.flight_end_time}` : ""}` : new Date(flight.scheduled_start_at).toLocaleString("vi-VN");
     return <article className="flight-card" key={flight.id}>
       <div className="flight-card-body">
         <div className="flight-card-title"><strong>{details.applicant_full_name ?? flight.summary}</strong><span className={`status-chip status-${flight.status.toLowerCase()}`}>{flightStatusLabel(flight.status)}</span></div>

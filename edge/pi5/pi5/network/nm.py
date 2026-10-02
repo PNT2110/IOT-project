@@ -1,6 +1,7 @@
-"""NetworkManager adapter for the Pi upstream Wi-Fi (the USB dongle).
+"""NetworkManager adapter for the Pi upstream Wi-Fi client.
 
-The access point stays on the onboard radio and is never touched from here.
+The access point (a second interface on the same radio) is never touched from
+here; a root dispatcher script keeps its channel in step with the client.
 Every nmcli call uses an argument list, so SSIDs and passwords are never
 interpreted by a shell.
 """
@@ -44,23 +45,22 @@ class NmcliAdapter:
         return None
 
     def status(self) -> dict[str, Any]:
-        offline = {"upstream_connected": False, "iface": self.upstream_iface, "ssid": None, "ip": None}
+        """Upstream means the Wi-Fi client only. A wired link is a bench aid and
+        is reported as ``wired`` without counting as the Pi's network."""
+        result = {"upstream_connected": False, "iface": self.upstream_iface, "ssid": None, "ip": None, "wired": False}
         code, out, _ = self._nmcli("-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device", "status")
         if code != 0:
-            return offline
-        wired: str | None = None
+            return result
         for line in out.splitlines():
             parts = _fields(line)
             if len(parts) < 4:
                 continue
             device, kind, state, connection = parts[0], parts[1], parts[2], parts[3]
             if device == self.upstream_iface and state == "connected":
-                return {"upstream_connected": True, "iface": device, "ssid": connection or None, "ip": self._ip(device)}
-            if kind == "ethernet" and state == "connected" and wired is None:
-                wired = device
-        if wired:
-            return {"upstream_connected": True, "iface": wired, "ssid": None, "ip": self._ip(wired)}
-        return offline
+                result.update(upstream_connected=True, ssid=connection or None, ip=self._ip(device))
+            elif kind == "ethernet" and state == "connected":
+                result["wired"] = True
+        return result
 
     def scan(self) -> list[dict[str, Any]]:
         code, out, _ = self._nmcli("-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list", "ifname", self.upstream_iface, "--rescan", "yes", timeout=30)
@@ -99,6 +99,9 @@ class NmcliAdapter:
         lowered = err.lower()
         if "secrets were required" in lowered or "802-11-wireless-security" in lowered:
             return {"ok": False, "error": "WRONG_PASSWORD"}
+        if "not authorized" in lowered or "insufficient privileges" in lowered:
+            # The service user lacks the polkit rule installed by ops/pi5/pi-setup.sh.
+            return {"ok": False, "error": "NOT_AUTHORIZED"}
         if "no network with ssid" in lowered:
             return {"ok": False, "error": "NETWORK_NOT_FOUND"}
         return {"ok": False, "error": "CONNECT_FAILED"}

@@ -138,8 +138,12 @@ class FlightAuthorityService:
         return value
 
     def _window_of(self, item: dict[str, Any]) -> tuple[datetime, datetime]:
-        start = datetime.strptime(f"{item['flight_date']} {item['flight_time']}", "%Y-%m-%d %H:%M").replace(tzinfo=LOCAL_TZ).astimezone(timezone.utc)
-        return start, start + self._window
+        def at(clock: str) -> datetime:
+            return datetime.strptime(f"{item['flight_date']} {clock}", "%Y-%m-%d %H:%M").replace(tzinfo=LOCAL_TZ).astimezone(timezone.utc)
+
+        start = at(item["flight_time"])
+        # Requests stored before the end time existed fall back to the fixed window.
+        return start, at(item["flight_end_time"]) if item.get("flight_end_time") else start + self._window
 
     def _view(self, item: dict[str, Any]) -> dict[str, Any]:
         start, end = self._window_of(item)
@@ -151,8 +155,10 @@ class FlightAuthorityService:
         license_code = self._text(body, "license_code", 80)
         flight_date = self._text(body, "flight_date", 10)
         flight_time = self._text(body, "flight_time", 5)
+        flight_end_time = self._text(body, "flight_end_time", 5)
         vehicle = self._text(body, "vehicle", 80)
-        if vehicle not in self.vehicles or not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", flight_time):
+        clock = r"([01]\d|2[0-3]):[0-5]\d"
+        if vehicle not in self.vehicles or not re.fullmatch(clock, flight_time) or not re.fullmatch(clock, flight_end_time) or flight_end_time <= flight_time:
             raise FlightRequestError()
         try:
             datetime.strptime(flight_date, "%Y-%m-%d")
@@ -167,6 +173,7 @@ class FlightAuthorityService:
             "license_code": license_code,
             "flight_date": flight_date,
             "flight_time": flight_time,
+            "flight_end_time": flight_end_time,
             "vehicle": vehicle,
             "gps": gps,
             "status": "PENDING_SEND",
@@ -189,6 +196,7 @@ class FlightAuthorityService:
             "license_code": item["license_code"],
             "flight_date": item["flight_date"],
             "flight_time": item["flight_time"],
+            "flight_end_time": item.get("flight_end_time"),
             "vehicle": item["vehicle"],
             "pi_username": item["requester"],
             "gps": item["gps"],

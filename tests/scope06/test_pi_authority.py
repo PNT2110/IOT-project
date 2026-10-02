@@ -19,7 +19,7 @@ from server.app import device_crypto as pc_crypto  # noqa: E402
 
 VN = timezone(timedelta(hours=7))
 USER = SimpleNamespace(user_id="u1", username="pitan")
-BODY = {"full_name": "Nguyen Van A", "license_code": "UAV-123456", "flight_date": "2026-10-02", "flight_time": "09:30", "vehicle": "F450 PNT PVD"}
+BODY = {"full_name": "Nguyen Van A", "license_code": "UAV-123456", "flight_date": "2026-10-02", "flight_time": "09:30", "flight_end_time": "10:10", "vehicle": "F450 PNT PVD"}
 
 
 class FakeAuthority:
@@ -77,7 +77,7 @@ def test_flight_submit_without_gps_sends_null():
     assert sent["gps"] is None
     assert sent["applicant_full_name"] == "Nguyen Van A"
     assert sent["license_code"] == "UAV-123456"
-    assert sent["flight_date"] == "2026-10-02" and sent["flight_time"] == "09:30"
+    assert sent["flight_date"] == "2026-10-02" and sent["flight_time"] == "09:30" and sent["flight_end_time"] == "10:10"
     assert sent["vehicle"] == "F450 PNT PVD" and sent["pi_username"] == "pitan"
     assert sent["client_ref"] == item["request_id"]
 
@@ -104,7 +104,7 @@ def test_flight_submit_pc_unreachable_stays_pending_send_and_retries():
 
 
 def test_approved_sends_auth_allow_only_inside_flight_window():
-    # 09:30 Vietnam time is 02:30 UTC; the default window is 60 minutes.
+    # 09:30-10:10 Vietnam time is 02:30-03:10 UTC.
     service, authority, lines, clock = make(datetime(2026, 10, 2, 2, 0, tzinfo=timezone.utc))
     item = service.create(USER, BODY)
     authority.decisions[f"remote-{item['request_id']}"] = {"status": "APPROVED", "reason": "Đủ điều kiện", "decided_at": "2026-10-02T02:05:00+00:00"}
@@ -116,10 +116,10 @@ def test_approved_sends_auth_allow_only_inside_flight_window():
 
     clock["now"] = datetime(2026, 10, 2, 2, 31, tzinfo=timezone.utc)
     service.tick()
-    assert lines[-1].startswith(b"$AUTH,ALLOW,3540,")
+    assert lines[-1].startswith(b"$AUTH,ALLOW,2340,")
     assert service.list_for(USER)[0]["arm_permission"] == "ALLOWED"
 
-    clock["now"] = datetime(2026, 10, 2, 3, 31, tzinfo=timezone.utc)
+    clock["now"] = datetime(2026, 10, 2, 3, 10, tzinfo=timezone.utc)
     service.tick()
     assert lines[-1].startswith(b"$AUTH,DENY,")
     assert service.list_for(USER)[0]["arm_permission"] == "BLOCKED"
@@ -166,7 +166,7 @@ def test_requests_survive_restart(tmp_path):
     assert lines[-1].startswith(b"$AUTH,ALLOW,")
 
 
-@pytest.mark.parametrize("change", [{"full_name": " "}, {"license_code": ""}, {"flight_date": "02/10/2026"}, {"flight_time": "25:00"}, {"vehicle": "Unknown craft"}])
+@pytest.mark.parametrize("change", [{"full_name": " "}, {"license_code": ""}, {"flight_date": "02/10/2026"}, {"flight_time": "25:00"}, {"flight_end_time": "09:30"}, {"flight_end_time": "09:00"}, {"flight_end_time": ""}, {"vehicle": "Unknown craft"}])
 def test_invalid_request_rejected(change):
     service, authority, _, _ = make(datetime(2026, 10, 2, 2, 0, tzinfo=timezone.utc))
     with pytest.raises(FlightRequestError):

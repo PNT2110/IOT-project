@@ -57,6 +57,12 @@ sed -i 's/\r$//' "$APP/pi.env"
 sed -i "s#__HOME__#$HOME#g" "$APP/pi.env"
 ( set -a; . "$APP/pi.env"; set +a; cd "$APP/edge/pi5" && "$APP/.venv/bin/python" -m pi5.cli seed-default-admin )
 
+bash "$APP/ops/pi5/pi-wifi-permission.sh"
+
+# The earlier no-sudo deployment ran the app as a user service on port 8080.
+systemctl --user disable --now iot-pi-web.service 2>/dev/null || true
+rm -f "$HOME/.config/systemd/user/iot-pi-web.service"
+
 echo "== [6/6] Service iot-pi-web on port 80"
 sudo tee /etc/systemd/system/iot-pi-web.service >/dev/null <<EOF
 [Unit]

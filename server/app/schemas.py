@@ -278,6 +278,8 @@ class DeviceFlightPayload(BaseModel):
     license_code: str = Field(min_length=1, max_length=80)
     flight_date: date
     flight_time: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    # End of the flight window, same day. Optional for older Pi builds (one hour).
+    flight_end_time: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     vehicle: str = Field(min_length=1, max_length=80)
     pi_username: str = Field(min_length=1, max_length=64)
     gps: DeviceGps | None = None
@@ -289,6 +291,12 @@ class DeviceFlightPayload(BaseModel):
         if not value:
             raise ValueError("field must not be empty")
         return value
+
+    @model_validator(mode="after")
+    def end_after_start(self):
+        if self.flight_end_time is not None and self.flight_end_time <= self.flight_time:
+            raise ValueError("flight_end_time must be after flight_time")
+        return self
 
 
 def ok(data: Any, request_id: str, observed_at: str) -> dict[str, Any]:

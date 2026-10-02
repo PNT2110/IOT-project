@@ -187,7 +187,7 @@ export function logout() {
 
 export type StaffRole = "ADMIN" | "OPERATOR";
 export type Account = { id: string; username?: string | null; display_name: string; email: string | null; status: string; role: string; version: number; email_verified: boolean; created_at: string; updated_at: string };
-export type FlightDetails = { applicant_full_name?: string; license_code?: string; vehicle?: string; flight_date?: string; flight_time?: string; pi_username?: string; gps?: { lat?: number; lon?: number; fix_state?: string; satellites?: number | null } | null };
+export type FlightDetails = { applicant_full_name?: string; license_code?: string; vehicle?: string; flight_date?: string; flight_time?: string; flight_end_time?: string | null; pi_username?: string; gps?: { lat?: number; lon?: number; fix_state?: string; satellites?: number | null } | null };
 export type FlightRequest = { id: string; submitter_user_id: string | null; device_id: string | null; device_name: string | null; summary: string; scheduled_start_at: string; scheduled_end_at: string; status: string; version: number; source: string; request_details?: FlightDetails };
 
 export function listAccounts() {

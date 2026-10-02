@@ -56,6 +56,11 @@ def device_submit_flight_request(envelope: DeviceEnvelope, request: Request, db:
         return ok({"request_id": existing.id, "status": DEVICE_STATUS.get(existing.status, "PENDING")}, request.state.request_id, _now_iso())
     hour, minute = (int(part) for part in body.flight_time.split(":"))
     start = datetime.combine(body.flight_date, clock_time(hour, minute), tzinfo=LOCAL_TZ).astimezone(timezone.utc)
+    if body.flight_end_time:
+        end_hour, end_minute = (int(part) for part in body.flight_end_time.split(":"))
+        end = datetime.combine(body.flight_date, clock_time(end_hour, end_minute), tzinfo=LOCAL_TZ).astimezone(timezone.utc)
+    else:
+        end = start + timedelta(hours=1)
     details = body.model_dump(mode="json", exclude={"client_ref"})
     now = utcnow()
     item = SimulatedFlightRequest(
@@ -64,7 +69,7 @@ def device_submit_flight_request(envelope: DeviceEnvelope, request: Request, db:
         client_ref=body.client_ref,
         summary=f"{body.vehicle} — {body.applicant_full_name}"[:240],
         scheduled_start_at=start,
-        scheduled_end_at=start + timedelta(hours=1),
+        scheduled_end_at=end,
         simulated_geometry_json="null",
         status="SUBMITTED",
         version=1,

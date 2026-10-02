@@ -1,56 +1,127 @@
 #!/usr/bin/env bash
-# Runs ON the Pi. Access point + captive portal for the Pi web app.
+# Runs ON the Pi. Access point + captive portal on the same radio as the
+# Wi-Fi client (wlan0 = client, ap0 = access point).
 #   pi-network.sh inspect    read-only report (default)
-#   pi-network.sh captive    send every DNS name asked by AP clients to the Pi,
-#                            so phones open the portal automatically
-# The access point itself is not recreated here: the Pi already broadcasts it.
-# The script refuses to touch an interface that carries the default route.
+#   pi-network.sh install    needs sudo: always-on access point, channel
+#                            follow-up when the client joins a network, and
+#                            captive-portal DNS
+# Only wlan0/ap0 are touched; the wired interface is left alone.
 set -euo pipefail
 MODE=${1:-inspect}
+STA=${STA:-wlan0}
+AP=${AP:-ap0}
+PROFILE=${PROFILE:-F450-1RADIO}
+AP_SSID=${AP_SSID:-F450}
 AP_ADDR=${AP_ADDR:-192.168.4.1}
-CONF=/etc/NetworkManager/dnsmasq-shared.d/iot-captive.conf
+CAPTIVE=/etc/NetworkManager/dnsmasq-shared.d/iot-captive.conf
 
 report() {
   echo "-- devices"; nmcli -t -f DEVICE,TYPE,STATE,CONNECTION device status
-  echo "-- active connections"; nmcli -t -f NAME,TYPE,DEVICE connection show --active
-  echo "-- wifi modes"; for c in $(nmcli -t -f NAME,TYPE connection show | awk -F: '$2=="802-11-wireless"{print $1}'); do
-    echo "$c: mode=$(nmcli -g 802-11-wireless.mode connection show "$c") ssid=$(nmcli -g 802-11-wireless.ssid connection show "$c") ipv4=$(nmcli -g ipv4.method connection show "$c") autoconnect=$(nmcli -g connection.autoconnect connection show "$c")"
-  done
   echo "-- default route"; ip route show default || true
-  echo "-- address $AP_ADDR on"; ip -br addr | grep -F "$AP_ADDR" || echo "(no interface has $AP_ADDR)"
-  echo "-- services"; systemctl is-active NetworkManager f450-ap hostapd dnsmasq iot-pi-web 2>&1 | paste -sd' '
-  echo "-- captive conf"; [ -f "$CONF" ] && cat "$CONF" || echo "(not installed)"
+  echo "-- radio"; iw dev 2>/dev/null | grep -E "Interface|type|channel|ssid" || true
+  echo "-- $AP_ADDR on"; ip -br addr | grep -F "$AP_ADDR" || echo "(no interface has $AP_ADDR)"
+  echo "-- services"; systemctl is-active NetworkManager f450-ap iot-pi-web 2>&1 | paste -sd' '
+  echo "-- captive conf"; [ -f "$CAPTIVE" ] && cat "$CAPTIVE" || echo "(not installed)"
 }
 
-ap_connection() {
-  for c in $(nmcli -t -f NAME,TYPE connection show --active | awk -F: '$2=="802-11-wireless"{print $1}'); do
-    [ "$(nmcli -g 802-11-wireless.mode connection show "$c")" = "ap" ] && { echo "$c"; return 0; }
+install_ap() {
+  if ! nmcli -t -f NAME connection show | grep -qx "$PROFILE"; then
+    echo "Creating access-point profile $PROFILE (SSID $AP_SSID)"
+    read -r -s -p "New Wi-Fi password for $AP_SSID (8-63 characters): " AP_PSK; echo
+    [ "${#AP_PSK}" -ge 8 ] && [ "${#AP_PSK}" -le 63 ] || { echo "Password length is invalid."; exit 1; }
+    sudo nmcli connection add type wifi ifname "$AP" con-name "$PROFILE" autoconnect no ssid "$AP_SSID" \
+      802-11-wireless.mode ap 802-11-wireless.band bg 802-11-wireless.channel 6 \
+      ipv4.method shared ipv4.addresses "$AP_ADDR/24" ipv6.method disabled \
+      wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$AP_PSK" >/dev/null
+    unset AP_PSK
+  fi
+
+  # The access point must come up whether or not the client is connected, and
+  # must sit on the client's channel because both share one radio.
+  sudo tee /usr/local/sbin/f450-ap.sh >/dev/null <<EOF
+#!/bin/bash
+# F450 access point on the same radio as the Wi-Fi client. Installed by ops/pi5/pi-network.sh.
+STA="$STA"; AP="$AP"; PROFILE="$PROFILE"; DEFAULT_CHANNEL=6
+exec 9>/run/f450-ap.lock
+flock -w 60 9 || exit 1
+
+ensure_iface() {
+  if ! iw dev | grep -q "Interface \$AP"; then
+    iw dev "\$STA" interface add "\$AP" type __ap || return 1
+  fi
+  ip link set "\$AP" up || true
+  nmcli device set "\$AP" managed yes || true
+  for _ in \$(seq 1 20); do
+    nmcli -g GENERAL.STATE device show "\$AP" 2>/dev/null | grep -qE "disconnected|connected" && return 0
+    sleep 1
   done
   return 1
 }
 
+start_ap() {
+  ensure_iface || { echo "[F450] \$AP is not ready"; exit 1; }
+  channel=""
+  if iw dev "\$STA" link | grep -q "^Connected"; then
+    channel="\$(iw dev "\$STA" info | awk '/channel/ {print \$2; exit}')"
+  fi
+  [ -n "\$channel" ] || channel="\$DEFAULT_CHANNEL"
+  band=bg; [ "\$channel" -gt 14 ] && band=a
+  current="\$(nmcli -g 802-11-wireless.channel connection show "\$PROFILE")"
+  active="\$(nmcli -g GENERAL.CONNECTION device show "\$AP" 2>/dev/null)"
+  if [ "\$current" = "\$channel" ] && [ "\$active" = "\$PROFILE" ]; then
+    echo "[F450] access point already up on channel \$channel"; exit 0
+  fi
+  nmcli connection modify "\$PROFILE" 802-11-wireless.band "\$band" 802-11-wireless.channel "\$channel"
+  nmcli connection down "\$PROFILE" 2>/dev/null || true
+  nmcli connection up "\$PROFILE" ifname "\$AP" && echo "[F450] access point up on channel \$channel"
+}
+
+case "\$1" in
+  start) start_ap ;;
+  stop) nmcli connection down "\$PROFILE" 2>/dev/null || true ;;
+  *) echo "usage: \$0 start|stop"; exit 2 ;;
+esac
+EOF
+  sudo chmod 755 /usr/local/sbin/f450-ap.sh
+
+  sudo tee /etc/systemd/system/f450-ap.service >/dev/null <<EOF
+[Unit]
+Description=F450 Wi-Fi access point (always on, same radio as the client)
+After=NetworkManager.service
+Wants=NetworkManager.service
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/f450-ap.sh start
+ExecStop=/usr/local/sbin/f450-ap.sh stop
+TimeoutStartSec=120
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  # When the client joins or leaves a network the radio changes channel:
+  # bring the access point back on the new channel.
+  sudo tee /etc/NetworkManager/dispatcher.d/90-f450-ap >/dev/null <<EOF
+#!/bin/bash
+[ "\$1" = "$STA" ] || exit 0
+case "\$2" in
+  up|down) (sleep 3; /usr/local/sbin/f450-ap.sh start) >/dev/null 2>&1 & ;;
+esac
+EOF
+  sudo chmod 755 /etc/NetworkManager/dispatcher.d/90-f450-ap
+
+  sudo mkdir -p "$(dirname "$CAPTIVE")"
+  printf '# Captive portal: every name resolves to the Pi for access-point clients.\naddress=/#/%s\n' "$AP_ADDR" | sudo tee "$CAPTIVE" >/dev/null
+
+  sudo systemctl daemon-reload
+  sudo systemctl enable f450-ap.service >/dev/null
+  sudo systemctl restart f450-ap.service || true
+  sleep 4
+  report
+}
+
 case "$MODE" in
-  inspect)
-    report
-    ;;
-  captive)
-    AP_CON=$(ap_connection) || { echo "No active access-point connection in NetworkManager; nothing changed."; exit 1; }
-    AP_DEV=$(nmcli -g GENERAL.DEVICES connection show "$AP_CON")
-    if [ "$(nmcli -g ipv4.method connection show "$AP_CON")" != "shared" ]; then
-      echo "AP connection '$AP_CON' is not ipv4.method=shared; captive DNS needs NetworkManager's dnsmasq. Nothing changed."; exit 1
-    fi
-    if ip route show default | grep -qw "dev $AP_DEV"; then
-      echo "Refusing: the default route goes through the AP interface $AP_DEV."; exit 1
-    fi
-    echo "AP connection: $AP_CON on $AP_DEV"
-    sudo mkdir -p "$(dirname "$CONF")"
-    printf '# Captive portal: every name resolves to the Pi for AP clients.\naddress=/#/%s\n' "$AP_ADDR" | sudo tee "$CONF" >/dev/null
-    # Restart only the AP connection so its dnsmasq picks up the file.
-    sudo nmcli connection down "$AP_CON" >/dev/null && sudo nmcli connection up "$AP_CON" >/dev/null
-    sleep 3
-    report
-    ;;
-  *)
-    echo "usage: $0 inspect|captive"; exit 2
-    ;;
+  inspect) report ;;
+  install) install_ap ;;
+  *) echo "usage: $0 inspect|install"; exit 2 ;;
 esac

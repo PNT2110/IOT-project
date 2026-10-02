@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   getMe,
   startProfileUpdate,
@@ -48,7 +49,7 @@ export function AccountMenu({ user, onLogout, onUpdated }: AccountMenuProps) {
           <button className="account-logout-item" role="menuitem" type="button" onClick={onLogout}>Đăng xuất</button>
         </div>}
       </div>
-      {profileOpen && <ProfileDialog user={user} onClose={() => setProfileOpen(false)} onUpdated={onUpdated} />}
+      {profileOpen && createPortal(<ProfileDialog user={user} onClose={() => setProfileOpen(false)} onUpdated={onUpdated} />, document.body)}
     </>
   );
 }
@@ -152,15 +153,10 @@ function ProfileDialog({ user, onClose, onUpdated }: { user: Me; onClose: () => 
           <div className="profile-fields">
             <label>Tên người dùng<input value={form.display_name} maxLength={80} autoComplete="username" onChange={(event) => setField("display_name", event.target.value)} required /></label>
             <label>Email<input type="email" value={form.email} autoComplete="email" onChange={(event) => setField("email", event.target.value)} required /></label>
-            <label>Họ và tên<input value={form.full_name} maxLength={200} autoComplete="name" onChange={(event) => setField("full_name", event.target.value)} /></label>
             <label>Mật khẩu mới <span className="field-hint">(để trống nếu không đổi)</span><input type="password" value={form.new_password} minLength={12} autoComplete="new-password" onChange={(event) => setField("new_password", event.target.value)} /></label>
-            <label>Mã bằng lái<input value={form.license_code} maxLength={100} onChange={(event) => setField("license_code", event.target.value)} /></label>
-            <label>Hạng giấy phép<select value={form.license_class} onChange={(event) => setField("license_class", event.target.value)}><option value="">Chưa khai báo</option><option value="A">Hạng A — bay trực quan</option><option value="B">Hạng B — bay bằng thiết bị/ngoài tầm nhìn</option></select></label>
-            <label>Ngày hết hạn bằng lái<input type="date" value={form.license_expiry} onChange={(event) => setField("license_expiry", event.target.value)} /></label>
             <label className="profile-password-field">Mật khẩu hiện tại<input type="password" value={form.current_password} autoComplete="current-password" onChange={(event) => setField("current_password", event.target.value)} required /></label>
           </div>
-          {form.license_code && !form.license_class && <p className="field-error" role="alert">Chọn hạng giấy phép cho mã bằng lái.</p>}
-          <div className="profile-dialog-actions"><button className="primary-button" type="submit" disabled={busy || Boolean(form.license_code && !form.license_class)}>{busy ? "Đang gửi mã…" : "Lưu và gửi mã OTP"}</button><button className="ghost-button" type="button" onClick={onClose} disabled={busy}>Hủy</button></div>
+          <div className="profile-dialog-actions"><button className="primary-button" type="submit" disabled={busy}>{busy ? "Đang gửi mã…" : "Lưu và gửi mã OTP"}</button><button className="ghost-button" type="button" onClick={onClose} disabled={busy}>Hủy</button></div>
         </form> : <form className="profile-otp-form" onSubmit={submitOtp}>
           <div className="otp-step-indicator"><span className="step-done">1</span><i /><span className={stage === "new-email" ? "step-done" : "step-current"}>2</span></div>
           <p>{stage === "current-email" ? <>Nhập mã OTP gửi tới <strong>{emailMasked}</strong> để xác nhận yêu cầu.</> : <>Nhập mã OTP gửi tới email mới <strong>{emailMasked}</strong>.</>}</p>

@@ -131,9 +131,15 @@ async function wifiScreen() {
       async (data) => {
         const result = await api("/network/connect", { method: "POST", body: { ssid: network.ssid, password: data.password || null } });
         if (!result.ok) {
-          throw new Error({ WRONG_PASSWORD: "Sai mật khẩu Wi-Fi.", NETWORK_NOT_FOUND: "Không còn thấy mạng này. Hãy quét lại.", INVALID_PASSWORD: "Mật khẩu Wi-Fi phải có 8–63 ký tự." }[result.error] ?? "Không kết nối được. Hãy thử lại.");
+          throw new Error({ WRONG_PASSWORD: "Sai mật khẩu Wi-Fi.", NETWORK_NOT_FOUND: "Không còn thấy mạng này. Hãy quét lại.", INVALID_PASSWORD: "Mật khẩu Wi-Fi phải có 8–63 ký tự.", NOT_AUTHORIZED: "Pi chưa được cấp quyền đổi Wi-Fi. Cần chạy lại pi-setup.sh trên Pi một lần." }[result.error] ?? "Không kết nối được. Hãy thử lại.");
         }
-        closeModal();
+        // The access point shares the radio and follows the new network's channel,
+        // so this device may drop off the Pi Wi-Fi for a few seconds.
+        modal("Đang kết nối", h("p", {}, `Pi đang kết nối tới ${network.ssid}. Nếu máy bạn bị rớt khỏi Wi-Fi của Pi, hãy kết nối lại rồi mở lại trang này.`), h("div", { class: "skeleton" }));
+        for (let attempt = 0; attempt < 15; attempt += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          try { if ((await api("/network/status")).upstream_connected) break; } catch { /* Pi Wi-Fi is restarting */ }
+        }
         await boot();
       }));
   };
@@ -147,10 +153,10 @@ async function wifiScreen() {
         h("button", { class: "primary", type: "button", onclick: () => connect(network) }, "Kết nối"))) : [h("li", {}, "Không thấy mạng Wi-Fi nào. Kiểm tra USB Wi-Fi rồi quét lại.")]));
     } catch (error) { status.replaceChildren(banner("error", error.message)); list.replaceChildren(); }
   };
-  app.append(h("section", { class: "card narrow" },
-    h("p", { class: "eyebrow" }, "BƯỚC 1 · KẾT NỐI MẠNG"),
-    h("h2", {}, "Kết nối Wi-Fi cho Pi"),
-    h("p", { class: "muted" }, "Pi chưa có mạng ngoài. Chọn một mạng Wi-Fi để Pi gửi mã xác nhận qua email và liên lạc với máy chủ."),
+  app.append(h("section", { class: "card auth" },
+    h("p", { class: "eyebrow" }, "KẾT NỐI MẠNG"),
+    h("h2", {}, "Kết nối Wi-Fi cho F450"),
+    h("p", { class: "muted" }, "Pi chưa kết nối Wi-Fi. Chọn một mạng để Pi gửi mã xác nhận qua email và liên lạc với máy chủ."),
     status, list,
     h("div", { class: "row", style: "margin-top:12px" }, h("button", { type: "button", onclick: scan }, "Quét lại"))));
   await scan();
@@ -160,19 +166,21 @@ async function wifiScreen() {
 
 function authScreen(mode = "login", notice = null) {
   clearScreen();
-  const card = h("section", { class: "card narrow" });
+  const card = h("section", { class: "card auth" });
   app.append(card);
   const show = (title, help, ...content) => {
-    card.replaceChildren(...h("div", {}, h("p", { class: "eyebrow" }, "BƯỚC 2 · XÁC THỰC"), h("h2", {}, title), help ? h("p", { class: "muted" }, help) : null, notice ? banner("ok", notice) : null, content).childNodes);
+    card.replaceChildren(...h("div", {},
+      h("div", { class: "auth-brand" }, h("img", { src: "/assets/logo-drone-zone-check.png", alt: "" }), h("div", {}, h("strong", {}, "F450 PNT PVD"), h("small", {}, "Trạm Pi 5"))),
+      h("h2", {}, title), help ? h("p", { class: "muted" }, help) : null, notice ? banner("ok", notice) : null, content).childNodes);
     card.querySelector("input")?.focus();
   };
   const codeField = (label) => field(label, "code", { inputMode: "numeric", pattern: "[0-9]{6}", maxLength: 6, autocomplete: "one-time-code" });
 
-  const totpStep = (mfaChallengeId) => show("Mã 2FA", "Nhập mã 6 số hiện tại trong ứng dụng xác thực.",
+  const totpStep = (mfaChallengeId) => { show("Mã 2FA", "Nhập mã 6 số hiện tại trong ứng dụng xác thực.",
     form(codeField("Mã 2FA"), "Đăng nhập", async (data) => {
       await api("/auth/login", { method: "POST", body: { mfa_challenge_id: mfaChallengeId, totp: data.code } });
       await boot();
-    }));
+    })); };
 
   const otpStep = (challengeId) => {
     let current = challengeId;
@@ -181,7 +189,7 @@ function authScreen(mode = "login", notice = null) {
         const result = await api("/auth/login", { method: "POST", body: { challenge_id: current, otp: data.code } });
         totpStep(result.mfa_challenge_id);
       }),
-      h("p", {}, h("button", { class: "link", type: "button", onclick: async (event) => {
+      h("p", { class: "resend" }, h("button", { class: "link", type: "button", onclick: async (event) => {
         try { current = (await api("/auth/resend-login-otp", { method: "POST", body: { challenge_id: current } })).challenge_id; event.target.textContent = "Đã gửi lại mã"; }
         catch (error) { event.target.textContent = error.message; }
       } }, "Gửi lại mã")));
@@ -207,7 +215,7 @@ function authScreen(mode = "login", notice = null) {
         else throw error.code === "AUTHENTICATION_FAILED" || error.status === 401 ? new Error("Sai tài khoản hoặc mật khẩu.") : error;
       }
     }),
-    h("p", {}, h("button", { class: "link", type: "button", onclick: () => authScreen("register") }, "Tạo tài khoản mới")));
+    h("p", { class: "switch" }, "Chưa có tài khoản?", h("button", { class: "link", type: "button", onclick: () => authScreen("register") }, "Đăng ký")));
 
   const register = () => show("Đăng ký tài khoản", "Tài khoản mới có quyền người dùng: chỉ xem camera.",
     form([
@@ -231,7 +239,7 @@ function authScreen(mode = "login", notice = null) {
             }));
         }));
     }),
-    h("p", {}, h("button", { class: "link", type: "button", onclick: () => authScreen("login") }, "Đã có tài khoản? Đăng nhập")));
+    h("p", { class: "switch" }, "Đã có tài khoản?", h("button", { class: "link", type: "button", onclick: () => authScreen("login") }, "Đăng nhập")));
 
   (mode === "register" ? register : login)();
 }
@@ -243,8 +251,11 @@ function cameraView() {
   const note = h("p", { class: "muted" });
   image.addEventListener("error", () => { note.textContent = "Chưa có hình từ webcam USB. Kiểm tra camera đã cắm vào Pi."; });
   cleanup.push(() => { image.src = ""; });
-  return h("section", { class: "card" }, h("div", { class: "row between" }, h("h2", {}, "Camera"),
-    h("button", { type: "button", onclick: () => { note.textContent = ""; image.src = `${API}/camera/mjpeg?t=${Date.now()}`; } }, "Tải lại")), image, note);
+  const live = h("span", { class: "chip live" }, "TRỰC TIẾP");
+  image.addEventListener("error", () => { live.hidden = true; });
+  image.addEventListener("load", () => { live.hidden = false; });
+  return h("section", { class: "card" }, h("div", { class: "row between", style: "margin-bottom:12px" }, h("h2", { style: "margin:0" }, "Camera"),
+    h("button", { type: "button", onclick: () => { note.textContent = ""; image.src = `${API}/camera/mjpeg?t=${Date.now()}`; } }, "Tải lại")), h("div", { class: "camera-frame" }, image, live), note);
 }
 
 function mapView() {
@@ -347,7 +358,7 @@ function telemetryView() {
     pidRows.append(h("div", { class: "pid-grid" }, h("strong", {}, label), inputs[axis],
       h("button", { type: "button", onclick: () => send("/tuning/pid", { axis, kp: Number(inputs[axis][0].value), ki: Number(inputs[axis][1].value), kd: Number(inputs[axis][2].value) }) }, "Gửi")));
   }
-  const section = h("div", {},
+  const section = h("div", { class: "view" },
     h("section", { class: "card" }, h("h2", {}, "Thông số drone"), state, metrics),
     h("div", { class: "grid2", style: "margin-top:16px" },
       h("section", { class: "card" }, h("h3", {}, "Mô hình 3D"), host),
@@ -397,9 +408,9 @@ function telemetryView() {
 }
 
 function usersView() {
-  const active = h("ul", { class: "list" });
-  const requests = h("ul", { class: "list" });
-  const all = h("ul", { class: "list" });
+  const active = h("ul", { class: "list" }, h("li", { class: "skeleton" }));
+  const requests = h("ul", { class: "list" }, h("li", { class: "skeleton" }));
+  const all = h("ul", { class: "list" }, h("li", { class: "skeleton" }));
   const status = h("div");
   const decide = async (item, decision) => {
     try { await api(`/role-requests/${item.request_id}/decision`, { method: "POST", body: { decision } }); await load(); }
@@ -416,14 +427,14 @@ function usersView() {
     } catch (error) { status.replaceChildren(banner("error", error.message)); }
   }
   setTimeout(() => every(10000, load));
-  return h("div", {}, status,
+  return h("div", { class: "view" }, status,
     h("section", { class: "card" }, h("h2", {}, "Đang hoạt động"), h("p", { class: "muted" }, "Tài khoản có thao tác trong 5 phút gần đây."), active),
     h("section", { class: "card" }, h("h2", {}, "Yêu cầu xin quyền admin"), requests),
     h("section", { class: "card" }, h("h2", {}, "Tất cả tài khoản"), all));
 }
 
 function firmwareView() {
-  const body = h("div", {}, h("p", { class: "muted" }, "Đang kiểm tra bản phát hành…"));
+  const body = h("div", {}, h("div", { class: "skeleton" }));
   async function load() {
     try {
       const latest = await api("/firmware/latest");
@@ -457,21 +468,53 @@ const FLIGHT_STATUS = {
 };
 
 function flightModal(onChange) {
-  api("/flight-options").then((options) => {
+  Promise.all([api("/flight-options"), api("/profile").catch(() => ({}))]).then(([options, profile]) => {
     const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-    modal("Xin cấp phép bay", h("p", { class: "muted" }, "Đơn được mã hóa và gửi lên máy chủ kèm vị trí GPS hiện tại của drone. Drone chỉ ARM được khi đơn được duyệt và đang trong giờ bay."),
+    modal("Xin cấp phép bay", h("p", { class: "muted" }, "Đơn được mã hóa và gửi lên máy chủ kèm vị trí GPS hiện tại của drone. Drone chỉ ARM được khi đơn được duyệt và đang trong khoảng giờ bay đã xin."),
       form([
-        field("Họ tên đầy đủ", "full_name", { maxLength: 160, autocomplete: "name" }),
-        field("Mã bằng lái", "license_code", { maxLength: 80 }),
+        field("Họ tên đầy đủ", "full_name", { maxLength: 160, autocomplete: "name", value: profile.full_name ?? "" }),
+        field("Mã bằng lái", "license_code", { maxLength: 80, value: profile.license_code ?? "" }),
         field("Ngày bay", "flight_date", { type: "date", min: today, value: today }),
-        field("Giờ bay", "flight_time", { type: "time" }),
+        h("div", { class: "form-grid" }, field("Bay từ giờ", "flight_time", { type: "time" }), field("Đến giờ", "flight_end_time", { type: "time" })),
         h("label", {}, "Phương tiện bay", h("select", { name: "vehicle", required: true }, options.vehicles.map((vehicle) => h("option", { value: vehicle }, vehicle)))),
       ], "Gửi đơn", async (data) => {
+        if (data.flight_end_time <= data.flight_time) throw new Error("Giờ kết thúc phải sau giờ bắt đầu.");
         await api("/flight-requests", { method: "POST", body: data });
         closeModal();
         onChange();
       }));
   }).catch((error) => modal("Xin cấp phép bay", banner("error", error.message)));
+}
+
+async function profileModal() {
+  let profile;
+  try { profile = await api("/profile"); } catch (error) { modal("Thông tin cá nhân", banner("error", error.message)); return; }
+  const otpStep = (challengeId, message) => modal("Xác nhận thay đổi", h("p", { class: "muted" }, message),
+    form(field("Mã OTP email", "code", { inputMode: "numeric", pattern: "[0-9]{6}", maxLength: 6, autocomplete: "one-time-code" }), "Xác nhận", async (data) => {
+      const result = await api("/profile/verify", { method: "POST", body: { challenge_id: challengeId, otp: data.code } });
+      if (result.next_step === "NEW_EMAIL_OTP") { otpStep(challengeId, `Nhập mã vừa gửi tới email mới ${result.email_masked ?? ""}.`); return; }
+      if (result.profile?.username) me.username = result.profile.username;
+      modal("Thông tin cá nhân", banner("ok", "Đã lưu thông tin cá nhân."));
+    }));
+  modal("Thông tin cá nhân", h("p", { class: "muted" }, "Họ tên và bằng lái dùng để điền sẵn đơn xin cấp phép bay. Thay đổi được xác nhận bằng mật khẩu hiện tại và mã OTP qua email."),
+    form([
+      h("div", { class: "form-grid" },
+        field("Tên tài khoản", "username", { value: profile.username ?? "", minLength: 3, maxLength: 64, autocomplete: "username" }),
+        field("Email", "email", { type: "email", value: profile.email ?? "", autocomplete: "email" }),
+        field("Họ và tên", "full_name", { value: profile.full_name ?? "", maxLength: 200, required: false, autocomplete: "name" }),
+        field("Mã bằng lái", "license_code", { value: profile.license_code ?? "", maxLength: 100, required: false }),
+        h("label", {}, "Hạng giấy phép", h("select", { name: "license_class" },
+          [["", "Chưa khai báo"], ["A", "Hạng A — bay trực quan"], ["B", "Hạng B — bay bằng thiết bị / ngoài tầm nhìn"]].map(([value, label]) => h("option", { value, selected: (profile.license_class ?? "") === value }, label)))),
+        field("Ngày hết hạn bằng lái", "license_expiry", { type: "date", value: profile.license_expiry ?? "", required: false }),
+        h("label", {}, h("span", {}, "Mật khẩu mới ", h("span", { class: "hint" }, "(để trống nếu không đổi)")), h("input", { name: "new_password", type: "password", minLength: 12, autocomplete: "new-password" })),
+        field("Mật khẩu hiện tại", "current_password", { type: "password", autocomplete: "current-password" })),
+    ], "Lưu và gửi mã OTP", async (data) => {
+      if (data.license_code && !data.license_class) throw new Error("Chọn hạng giấy phép cho mã bằng lái.");
+      const body = { current_password: data.current_password, username: data.username, email: data.email, full_name: data.full_name, license_code: data.license_code, license_class: data.license_class, license_expiry: data.license_expiry };
+      if (data.new_password) body.new_password = data.new_password;
+      const challenge = await api("/profile/challenge", { method: "POST", body });
+      otpStep(challenge.challenge_id, "Nhập mã 6 số vừa gửi tới email của tài khoản.");
+    }));
 }
 
 function roleRequestModal() {
@@ -486,9 +529,10 @@ function roleRequestModal() {
 function dashboard() {
   clearScreen();
   const admin = me.role === "ADMIN";
-  const logout = h("button", { type: "button", onclick: async () => { try { await api("/auth/logout", { method: "POST" }); } finally { me = null; authScreen("login"); } } }, `Đăng xuất (${me.username})`);
+  const account = h("button", { type: "button", onclick: profileModal }, me.username);
+  const logout = h("button", { class: "ghost", type: "button", onclick: async () => { try { await api("/auth/logout", { method: "POST" }); } finally { me = null; authScreen("login"); } } }, "Đăng xuất");
   if (!admin) {
-    topActions.append(h("button", { class: "primary", type: "button", onclick: roleRequestModal }, "Xin quyền admin"), logout);
+    topActions.append(h("button", { class: "primary", type: "button", onclick: roleRequestModal }, "Xin quyền admin"), account, logout);
     app.append(cameraView());
     return;
   }
@@ -503,15 +547,15 @@ function dashboard() {
       const allowed = latest.arm_permission === "ALLOWED";
       flightChip.replaceChildren(h("span", { class: `chip ${allowed ? "ok" : kind}` }, allowed ? "Được phép bay" : label));
       flightPanel.replaceChildren(h("section", { class: "card", style: "margin-bottom:16px" }, h("div", { class: "row between" }, h("h3", {}, "Đơn xin bay gần nhất"), h("span", { class: `chip ${kind}` }, label)),
-        h("dl", { class: "kv" }, h("dt", {}, "Người bay"), h("dd", {}, latest.full_name), h("dt", {}, "Ngày, giờ"), h("dd", {}, `${latest.flight_date} · ${latest.flight_time}`), h("dt", {}, "Phương tiện"), h("dd", {}, latest.vehicle), h("dt", {}, "Định vị gửi kèm"), h("dd", {}, latest.gps ? `${latest.gps.lat.toFixed(6)}, ${latest.gps.lon.toFixed(6)}` : "Không có định vị"),
+        h("dl", { class: "kv" }, h("dt", {}, "Người bay"), h("dd", {}, latest.full_name), h("dt", {}, "Ngày, giờ"), h("dd", {}, `${latest.flight_date} · ${latest.flight_time}${latest.flight_end_time ? ` – ${latest.flight_end_time}` : ""}`), h("dt", {}, "Phương tiện"), h("dd", {}, latest.vehicle), h("dt", {}, "Định vị gửi kèm"), h("dd", {}, latest.gps ? `${latest.gps.lat.toFixed(6)}, ${latest.gps.lon.toFixed(6)}` : "Không có định vị"),
           latest.reason ? [h("dt", {}, "Ghi chú duyệt"), h("dd", {}, latest.reason)] : null),
         h("p", { class: "muted" }, allowed ? "Drone được phép ARM trong khung giờ bay." : latest.status === "APPROVED" ? "Đơn đã duyệt nhưng chưa tới hoặc đã qua khung giờ bay: drone vẫn khóa ARM." : latest.status === "REJECTED" ? "Drone bị khóa ARM." : "Drone khóa ARM cho tới khi đơn được duyệt.")));
     } catch { /* keep the last known state */ }
   };
-  topActions.append(flightChip, h("button", { class: "primary", type: "button", onclick: () => flightModal(refreshFlight) }, "Xin cấp phép bay"), logout);
+  topActions.append(flightChip, h("button", { class: "primary", type: "button", onclick: () => flightModal(refreshFlight) }, "Xin cấp phép bay"), account, logout);
 
   const views = { "Camera": cameraView, "Bản đồ": mapView, "Thông số": telemetryView, "Người dùng": usersView, "Firmware": firmwareView };
-  const content = h("div");
+  const content = h("div", { class: "view" });
   const tabs = h("div", { class: "tabs", role: "tablist" });
   const select = (name) => {
     timers.forEach(clearInterval); timers = [];
@@ -536,5 +580,9 @@ async function boot() {
   try { me = await api("/auth/me"); } catch { me = null; }
   if (me) dashboard(); else authScreen("login");
 }
+
+// The tab bar sticks right under the top bar, whose height changes when it wraps.
+const topBar = document.querySelector(".top");
+new ResizeObserver(() => document.documentElement.style.setProperty("--top-height", `${topBar.offsetHeight}px`)).observe(topBar);
 
 boot();
