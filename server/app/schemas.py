@@ -299,5 +299,19 @@ class DeviceFlightPayload(BaseModel):
         return self
 
 
+class TelemetryPayload(BaseModel):
+    device_id: str | None = None
+    seq: int | None = None
+    observed_at: str | None = None
+    latitude: float | None = Field(default=None, ge=-90.0, le=90.0)
+    longitude: float | None = Field(default=None, ge=-180.0, le=180.0)
+    altitude_m: float | None = None
+    battery_pct: float | None = None
+    voltage_v: float | None = None
+    fix_state: str | None = "UNAVAILABLE"
+    stale: bool = False
+
+
 def ok(data: Any, request_id: str, observed_at: str) -> dict[str, Any]:
     return {"schema_version": "v1", "request_id": request_id, "data": data, "error": None, "observed_at": observed_at}
+

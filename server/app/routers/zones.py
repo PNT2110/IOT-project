@@ -149,3 +149,58 @@ def delete_zone(zone_id: str, request: Request, db: Session = Depends(_db), if_m
     record_audit(db, actor_user_id=user.id, action="DELETE", object_type="ZONE", object_id=zone.id, outcome="SUCCESS", request_id=request.state.request_id, metadata={"from_version": expected, "to_version": zone.version})
     db.commit()
     return ok(result, request.state.request_id, _now_iso())
+
+
+@router.get("/zones/export/geojson")
+def export_zones_geojson(
+    request: Request,
+    db: Session = Depends(_db),
+    visibility: str | None = None,
+):
+    token = _token_from_request(request)
+    is_internal = False
+    if token:
+        try:
+            _, user, _ = _session(request, db)
+            if user.status == "ACTIVE" and user.role in {"OPERATOR", "ADMIN", "OWNER"}:
+                is_internal = True
+        except HTTPException:
+            pass
+
+    query = select(Zone).where(Zone.deleted_at.is_(None))
+    if not is_internal or visibility == "PUBLIC":
+        query = query.where(Zone.visibility == "PUBLIC")
+    elif visibility:
+        query = query.where(Zone.visibility == visibility)
+
+    rows = db.scalars(query.order_by(Zone.name)).all()
+    features = []
+    for z in rows:
+        try:
+            geom = json.loads(z.geometry_json)
+        except Exception:
+            continue
+        features.append({
+            "type": "Feature",
+            "id": z.id,
+            "geometry": geom,
+            "properties": {
+                "id": z.id,
+                "name": z.name,
+                "visibility": z.visibility,
+                "classification": z.classification,
+                "source_id": z.source_id,
+                "version": z.version,
+                "retrieved_at": z.retrieved_at.isoformat() if z.retrieved_at else None,
+            },
+        })
+    collection = {
+        "type": "FeatureCollection",
+        "features": features,
+    }
+    return Response(
+        content=json.dumps(collection, indent=2, ensure_ascii=False),
+        media_type="application/geo+json",
+        headers={"Content-Disposition": 'attachment; filename="zones.geojson"'},
+    )
+

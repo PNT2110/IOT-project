@@ -66,11 +66,59 @@ int main() {
   for (int i = 0; i < 2000; i++) capped = altitude_throttle_cap(limiter, 121.0f, 120.0f, 1600);
   CHECK(capped < 1470 && capped >= 1360 && capped <= 1375);              // 10 us per second at 200 Hz
   for (int i = 0; i < 200000; i++) capped = altitude_throttle_cap(limiter, 121.0f, 120.0f, 1600);
-  CHECK(capped == ALT_LIMIT_FLOOR_US);
-  CHECK(altitude_throttle_cap(limiter, 119.5f, 120.0f, 1600) == ALT_LIMIT_FLOOR_US);  // still inside the 1 m band
+  CHECK(capped == 1350);  // dynamic floor based on entry throttle (1500 - 150 = 1350 us)
+  CHECK(altitude_throttle_cap(limiter, 119.5f, 120.0f, 1600) == 1350);  // still inside the 1 m band
   CHECK(limiter.active);
   CHECK(altitude_throttle_cap(limiter, 118.9f, 120.0f, 1600) == 1600);
   CHECK(!limiter.active);
+
+  // Low entry throttle (1200 us) clamps dynamic floor to ALT_LIMIT_DEFAULT_FLOOR_US (1100 us)
+  AltLimiter low_limiter;
+  altitude_throttle_cap(low_limiter, 120.5f, 120.0f, 1200);
+  CHECK(low_limiter.active);
+  int low_capped = 1200;
+  for (int i = 0; i < 200000; i++) low_capped = altitude_throttle_cap(low_limiter, 121.0f, 120.0f, 1600);
+  CHECK(low_capped == ALT_LIMIT_FLOOR_US);
+
+  // High climb entry (1850 us) caps dynamic floor at 1450 us (prevents climb lockout)
+  AltLimiter climb_limiter;
+  altitude_throttle_cap(climb_limiter, 120.5f, 120.0f, 1850, 4.0f);
+  CHECK(climb_limiter.active);
+  int climb_capped = 1820;
+  for (int i = 0; i < 200000; i++) climb_capped = altitude_throttle_cap(climb_limiter, 121.0f, 120.0f, 1850, 1.0f);
+  CHECK(climb_capped == 1450);
+
+  // Descent does not depress effective_floor below min_floor_us
+  AltLimiter desc_limiter;
+  int desc_capped = altitude_throttle_cap(desc_limiter, 125.0f, 120.0f, 1460, -1.0f, 1450.0f);
+  CHECK(desc_capped == 1450);
+
+  // Dynamic altitude ceiling: configured min_floor_us prevents uncontrolled descent on heavy frame
+  AltLimiter dyn_limiter;
+  CHECK(altitude_throttle_cap(dyn_limiter, 50.0f, 120.0f, 1550, 0.0f, 1350.0f) == 1550);
+  CHECK(!dyn_limiter.active);
+  CHECK(altitude_throttle_cap(dyn_limiter, 120.5f, 120.0f, 1550, 0.0f, 1350.0f) == 1520);
+  CHECK(dyn_limiter.active);
+  int dyn_capped = 1520;
+  for (int i = 0; i < 200000; i++) dyn_capped = altitude_throttle_cap(dyn_limiter, 121.0f, 120.0f, 1600, 0.0f, 1350.0f);
+  CHECK(dyn_capped == 1350);  // clamps at configured safe floor, never drops to 1100
+  CHECK(altitude_throttle_cap(dyn_limiter, 118.8f, 120.0f, 1600, 0.0f, 1350.0f) == 1600);
+  CHECK(!dyn_limiter.active);
+
+  // Dynamic altitude ceiling: barometer vertical speed dampening
+  AltLimiter vspeed_limiter;
+  // Entering limiter at 1500 us while descending fast (-1.5 m/s)
+  int vs_capped = altitude_throttle_cap(vspeed_limiter, 120.5f, 120.0f, 1500, -1.5f);
+  CHECK(vspeed_limiter.active);
+  // Base entry: 1500 - 150 = 1350 us. Vspeed dampening (-(-1.5) - 0.4) * 100 = +110 us -> floor = 1460 us
+  for (int i = 0; i < 200000; i++) vs_capped = altitude_throttle_cap(vspeed_limiter, 121.0f, 120.0f, 1600, -1.5f);
+  CHECK(vs_capped >= 1450);
+  CHECK(vs_capped > ALT_LIMIT_DEFAULT_FLOOR_US);
+  // Pilot can still throttle down lower if desired
+  CHECK(altitude_throttle_cap(vspeed_limiter, 121.0f, 120.0f, 1300, -1.5f) == 1300);
+  // Normal release below 1m
+  CHECK(altitude_throttle_cap(vspeed_limiter, 118.9f, 120.0f, 1600, -0.5f) == 1600);
+  CHECK(!vspeed_limiter.active);
 
   // SBUS flag byte: bit 3 is failsafe.
   CHECK(sbus_flags_ok(0x00));

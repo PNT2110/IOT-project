@@ -1,0 +1,51 @@
+--- a/server/app/models.py
++++ b/server/app/models.py
+@@ -10,6 +10,7 @@
+ from sqlalchemy.orm import Mapped, mapped_column, relationship
+ 
+ from .db import Base
++from .security import utcnow
+ 
+ 
+ def new_id() -> str:
+@@ -190,9 +191,9 @@ class SimulatedFlightRequest(Base):
+     client_ref: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+     summary: Mapped[str] = mapped_column(String(240))
+-    scheduled_start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+-    scheduled_end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+-    simulated_geometry_json: Mapped[str] = mapped_column(Text)
++    scheduled_start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
++    scheduled_end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
++    simulated_geometry_json: Mapped[str] = mapped_column(Text, default="null")
+     status: Mapped[str] = mapped_column(String(32), default="DRAFT", index=True)
+     version: Mapped[int] = mapped_column(Integer, default=1)
+     simulated: Mapped[bool] = mapped_column(Boolean, default=True)
+--- a/server/app/routers/deps.py
++++ b/server/app/routers/deps.py
+@@ -380,6 +380,8 @@ def _remember_idempotency(db: Session, *, actor_user_id: str, key: str, action:
+ 
+ 
+-def _iso(value: datetime) -> str:
++def _iso(value: datetime | None) -> str | None:
++    if value is None:
++        return None
+     return value.astimezone(timezone.utc).isoformat() if value.tzinfo else value.replace(tzinfo=timezone.utc).isoformat()
+ 
+ 
+@@ -482,7 +484,7 @@ def _store_flight_details(item: SimulatedFlightRequest, body: SimulatedFlightCre
+ def _flight_view(item: SimulatedFlightRequest, settings: Settings | None = None, *, include_details: bool = False, device_name: str | None = None) -> dict:
+-    result = {"id": item.id, "submitter_user_id": item.submitter_user_id, "device_id": item.device_id, "device_name": device_name, "summary": item.summary, "scheduled_start_at": _iso(item.scheduled_start_at), "scheduled_end_at": _iso(item.scheduled_end_at), "geometry": json.loads(item.simulated_geometry_json), "status": item.status, "version": item.version, "simulated": True, "authority_contract": "PC_INTERNAL_V1", "legal_status": "NOT_A_GOVERNMENT_PERMIT", "label": "PC INTERNAL DECISION — NOT A GOVERNMENT PERMIT", "source": item.source, "payload_digest": item.request_payload_digest, "updated_at": _iso(item.updated_at), "created_at": _iso(item.created_at)}
++    result = {"id": item.id, "submitter_user_id": item.submitter_user_id, "device_id": item.device_id, "device_name": device_name, "summary": item.summary, "scheduled_start_at": _iso(item.scheduled_start_at) if item.scheduled_start_at else None, "scheduled_end_at": _iso(item.scheduled_end_at) if item.scheduled_end_at else None, "geometry": json.loads(item.simulated_geometry_json) if item.simulated_geometry_json else None, "status": item.status, "version": item.version, "simulated": True, "authority_contract": "PC_INTERNAL_V1", "legal_status": "NOT_A_GOVERNMENT_PERMIT", "label": "PC INTERNAL DECISION — NOT A GOVERNMENT PERMIT", "source": item.source, "payload_digest": item.request_payload_digest, "updated_at": _iso(item.updated_at), "created_at": _iso(item.created_at)}
+     if include_details and settings and item.request_details_ciphertext:
+--- a/tests/e2e/test_tier4_scenarios.py
++++ b/tests/e2e/test_tier4_scenarios.py
+@@ -76,6 +76,9 @@ def test_scenario_1_complete_mission_workflow(
+             submitter_user_id=pilot.id,
+             device_id=registered_device["id"],
+             summary="Agricultural Survey Mission Alpha",
++            scheduled_start_at=now,
++            scheduled_end_at=now,
++            simulated_geometry_json="null",
+             status="SUBMITTED",
+             version=1,
+             source="WEB",

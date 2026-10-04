@@ -5,9 +5,11 @@ static AltLimiter alt_limiter;
 bool altitude_limit_active() { return alt_limiter.active; }
 void altitude_limit_reset() { alt_limiter = AltLimiter(); }
 
+#define ALT_LIMIT_SAFE_FLOOR_US 1350.0f
+
 static void apply_altitude_limit() {
   if (!baro_available()) { alt_limiter.active = false; return; }
-  throttle_smoot = altitude_throttle_cap(alt_limiter, Altitude_barometer - arm_ground_alt, max_altitude_m, (int)throttle_smoot);
+  throttle_smoot = altitude_throttle_cap(alt_limiter, Altitude_barometer - arm_ground_alt, max_altitude_m, (int)throttle_smoot, baro_vspeed_mps, ALT_LIMIT_SAFE_FLOOR_US);
 }
 
 void angle_mode() {

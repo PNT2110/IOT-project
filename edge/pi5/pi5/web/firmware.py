@@ -190,11 +190,11 @@ class FirmwareUpdater:
             raise FirmwareUpdateError("ESP_NOT_CONNECTED")
         if self._arm_state() == "ARMED":
             raise FirmwareUpdateError("DRONE_ARMED")
-        job: dict[str, object] = {"job_id": secrets.token_hex(8), "version": version, "state": "DOWNLOADING", "detail": None}
+        job: dict[str, object] = {"job_id": secrets.token_hex(8), "version": version, "state": "DOWNLOADING", "status": "QUEUED", "detail": None}
         self._jobs[job["job_id"]] = job
 
         def fail(detail: str) -> dict[str, object]:
-            job["state"], job["detail"] = "FAILED", detail
+            job["state"], job["status"], job["detail"] = "FAILED", "FAILED", detail
             return job
 
         try:
@@ -208,6 +208,7 @@ class FirmwareUpdater:
         path = self._workdir / FIRMWARE_ASSET
         path.write_bytes(image)
         job["state"] = "FLASHING"
+        job["status"] = "FLASHING"
         self._link.pause()
         try:
             result = self._run([sys.executable, "-m", "esptool", "--chip", "esp32", "-p", self._device, "-b", "460800", "write_flash", APP_OFFSET, str(path)], capture_output=True, text=True, timeout=180, check=False)
@@ -220,4 +221,73 @@ class FirmwareUpdater:
             return fail("ESPTOOL_FAILED")
         (self._workdir / "current_version.txt").write_text(version, encoding="utf-8")
         job["state"] = "DONE"
+        job["status"] = "COMPLETED"
         return job
+
+    def upload(self, image: bytes, filename: str = FIRMWARE_ASSET) -> dict[str, object]:
+        import hashlib
+        import secrets
+        import sys
+
+        if len(image) > MAX_FIRMWARE_BYTES:
+            raise FirmwareUpdateError("PAYLOAD_TOO_LARGE")
+        if not image:
+            raise FirmwareUpdateError("EMPTY_FILE")
+        if image[0] != 0xe9:
+            raise FirmwareUpdateError("INVALID_MAGIC_BYTE")
+        if self._arm_state() == "ARMED":
+            raise FirmwareUpdateError("DRONE_ARMED")
+
+        sha256 = hashlib.sha256(image).hexdigest()
+        job_id = secrets.token_hex(8)
+        version = f"upload-{sha256[:8]}"
+        job: dict[str, object] = {
+            "job_id": job_id,
+            "version": version,
+            "filename": filename,
+            "size": len(image),
+            "sha256": sha256,
+            "state": "QUEUED",
+            "status": "QUEUED",
+            "detail": None,
+        }
+        self._jobs[job_id] = job
+
+        self._workdir.mkdir(parents=True, exist_ok=True)
+        path = self._workdir / FIRMWARE_ASSET
+        path.write_bytes(image)
+        (self._workdir / f"{FIRMWARE_ASSET}.sha256").write_text(f"{sha256}  {FIRMWARE_ASSET}\n", encoding="ascii")
+
+        job["state"] = "FLASHING"
+        job["status"] = "FLASHING"
+
+        if self._link and hasattr(self._link, "pause"):
+            self._link.pause()
+        try:
+            if self._device and self._run:
+                result = self._run(
+                    [sys.executable, "-m", "esptool", "--chip", "esp32", "-p", self._device, "-b", "460800", "write_flash", APP_OFFSET, str(path)],
+                    capture_output=True,
+                    text=True,
+                    timeout=180,
+                    check=False,
+                )
+                if getattr(result, "returncode", 0) != 0:
+                    job["state"] = "FAILED"
+                    job["status"] = "FAILED"
+                    job["detail"] = "ESPTOOL_FAILED"
+                    return job
+        except Exception:
+            job["state"] = "FAILED"
+            job["status"] = "FAILED"
+            job["detail"] = "ESPTOOL_FAILED"
+            return job
+        finally:
+            if self._link and hasattr(self._link, "resume"):
+                self._link.resume()
+
+        (self._workdir / "current_version.txt").write_text(version, encoding="utf-8")
+        job["state"] = "DONE"
+        job["status"] = "COMPLETED"
+        return job
+

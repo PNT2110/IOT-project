@@ -24,8 +24,19 @@ def as_utc(value: datetime) -> datetime:
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
 
 
+GMAIL_DOMAINS = {"gmail.com", "googlemail.com"}
+
+
 def normalize_email(value: str) -> str:
-    return value.strip().casefold()
+    cleaned = value.strip().casefold()
+    if "@" not in cleaned:
+        return cleaned
+    local_part, domain = cleaned.split("@", 1)
+    local_part = local_part.split("+", 1)[0]
+    if domain in GMAIL_DOMAINS:
+        local_part = local_part.replace(".", "")
+        domain = "gmail.com"
+    return f"{local_part}@{domain}"
 
 
 def hash_password(password: str) -> str:

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import csv
+import io
+
 from .deps import *  # noqa: F401,F403
 
 router = APIRouter()
@@ -47,6 +50,83 @@ def list_flight_requests(request: Request, db: Session = Depends(_db), settings:
     rows = db.scalars(query.offset((page - 1) * page_size).limit(page_size)).all()
     names = {device.id: device.name for device in db.scalars(select(Device)).all()}
     return ok({"items": [_flight_view(item, settings, include_details=True, device_name=names.get(item.device_id)) for item in rows], "page": page, "page_size": page_size, "label": "SIMULATED — NOT A FLIGHT PERMIT"}, request.state.request_id, _now_iso())
+
+
+@router.get("/flight-requests/notifications")
+@router.get("/simulated/flight-requests/notifications", include_in_schema=False)
+def flight_request_notifications(request: Request, db: Session = Depends(_db)):
+    _, user, _ = _require_workflow_reviewer(request, db)
+    pending_items = db.scalars(
+        select(SimulatedFlightRequest)
+        .where(SimulatedFlightRequest.status == "SUBMITTED")
+        .order_by(SimulatedFlightRequest.updated_at.desc())
+        .limit(10)
+    ).all()
+    count = db.scalar(
+        select(func.count(SimulatedFlightRequest.id))
+        .where(SimulatedFlightRequest.status == "SUBMITTED")
+    ) or 0
+    latest_id = pending_items[0].id if pending_items else None
+    latest_at = _iso(pending_items[0].updated_at) if pending_items and pending_items[0].updated_at else (_iso(pending_items[0].created_at) if pending_items else None)
+    return ok({
+        "pending_count": count,
+        "latest_request_id": latest_id,
+        "latest_submitted_at": latest_at,
+        "items": [_flight_view(item) for item in pending_items],
+    }, request.state.request_id, _now_iso())
+
+
+@router.get("/flight-requests/export/csv")
+@router.get("/simulated/flight-requests/export/csv", include_in_schema=False)
+def export_flight_requests_csv(
+    request: Request,
+    db: Session = Depends(_db),
+    settings: Settings = Depends(_settings),
+):
+    _, user, _ = _require_workflow_reviewer(request, db)
+    rows = db.scalars(
+        select(SimulatedFlightRequest).order_by(SimulatedFlightRequest.created_at.desc())
+    ).all()
+    devices = {d.id: d.name for d in db.scalars(select(Device)).all()}
+
+    output = io.StringIO()
+    writer = csv.writer(output, lineterminator="\r\n")
+    writer.writerow([
+        "id", "status", "source", "device_name", "summary",
+        "applicant_name", "license_code", "vehicle",
+        "scheduled_start_at", "scheduled_end_at", "created_at", "updated_at",
+    ])
+    for item in rows:
+        applicant = ""
+        license_code = ""
+        vehicle = ""
+        if item.request_details_ciphertext:
+            try:
+                details = json.loads(decrypt_secret(settings.session_secret, item.request_details_ciphertext))
+                applicant = details.get("applicant_full_name") or details.get("applicant_name") or ""
+                license_code = details.get("license_code") or ""
+                vehicle = details.get("vehicle") or ""
+            except Exception:
+                pass
+        writer.writerow([
+            item.id,
+            item.status,
+            item.source,
+            devices.get(item.device_id, "") or "",
+            item.summary or "",
+            applicant,
+            license_code,
+            vehicle,
+            _iso(item.scheduled_start_at) if item.scheduled_start_at else "",
+            _iso(item.scheduled_end_at) if item.scheduled_end_at else "",
+            _iso(item.created_at) if item.created_at else "",
+            _iso(item.updated_at) if item.updated_at else "",
+        ])
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="flight_history.csv"'},
+    )
 
 
 @router.get("/flight-requests/{request_id}")
@@ -191,3 +271,5 @@ def decide_flight_request(request_id: str, body: SimulatedFlightDecisionRequest,
     record_history(db, actor_user_id=reviewer.id, object_type="SIMULATED_FLIGHT", object_id=item.id, action="DECISION", from_state=old_state, to_state=item.status, from_version=old_version, to_version=item.version, reason=body.reason, request_id=request.state.request_id, metadata={"simulated": True, "label": "SIMULATED — NOT A FLIGHT PERMIT"})
     db.commit()
     return ok(result, request.state.request_id, _now_iso())
+
+

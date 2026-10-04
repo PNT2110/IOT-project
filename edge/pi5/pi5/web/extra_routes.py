@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse, RedirectResponse, Response, Streamin
 from ..telemetry.esp_command import EspCommandError, set_max_altitude, set_pid
 from ..telemetry.esp_link import EspLinkError
 from .authority import FlightRequestError
-from .firmware import FirmwareUpdateError
+from .firmware import MAX_FIRMWARE_BYTES, FirmwareUpdateError, FirmwareUpdater
 from .models import PiRole, envelope, utcnow
 
 PORTAL_URL = "http://192.168.4.1/"
@@ -28,6 +28,33 @@ def _fetch_tile(url: str) -> bytes:
     request = UrlRequest(url, headers={"User-Agent": "IOT-Pi-DroneZoneCheck/1 (local map cache)"})
     with urlopen(request, timeout=10) as response:
         return response.read(1_000_000)
+
+
+def _parse_multipart_body(body: bytes, content_type: str) -> tuple[str, bytes]:
+    match = re.search(r"boundary=([^;]+)", content_type)
+    if not match:
+        return "FC_can_bang.bin", body
+    boundary = match.group(1).strip().strip('"').strip("'").encode("utf-8")
+    delimiter = b"--" + boundary
+    parts = body.split(delimiter)
+    for part in parts:
+        if not part or part.startswith(b"--") or part == b"--\r\n":
+            continue
+        if b"\r\n\r\n" in part:
+            header_bytes, content = part.split(b"\r\n\r\n", 1)
+        elif b"\n\n" in part:
+            header_bytes, content = part.split(b"\n\n", 1)
+        else:
+            continue
+        if content.endswith(b"\r\n"):
+            content = content[:-2]
+        elif content.endswith(b"\n"):
+            content = content[:-1]
+        header_text = header_bytes.decode("latin1", errors="replace")
+        fn_match = re.search(r'filename=["\']?([^"\'\r\n;]+)', header_text)
+        filename = fn_match.group(1) if fn_match else "FC_can_bang.bin"
+        return filename, content
+    return "FC_can_bang.bin", b""
 
 
 def register_extra_routes(
@@ -98,8 +125,16 @@ def register_extra_routes(
             return json_error(503, "CAMERA_STREAM_UNAVAILABLE", "Camera stream is not available")
 
         def body():
-            for frame in frames():
-                yield b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: " + str(len(frame)).encode() + b"\r\n\r\n" + frame + b"\r\n"
+            try:
+                for frame in frames():
+                    yield b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: " + str(len(frame)).encode() + b"\r\n\r\n" + frame + b"\r\n"
+            finally:
+                disconnect = getattr(state.camera, "disconnect_consumer", None)
+                if disconnect is not None:
+                    try:
+                        disconnect()
+                    except Exception:
+                        pass
 
         return StreamingResponse(body(), media_type="multipart/x-mixed-replace; boundary=frame")
 
@@ -192,8 +227,26 @@ def register_extra_routes(
     # ---- firmware update
 
     def firmware_error(exc: FirmwareUpdateError) -> JSONResponse:
-        status = {"FIRMWARE_REPO_NOT_CONFIGURED": 503, "FIRMWARE_RELEASE_UNAVAILABLE": 502, "ESP_NOT_CONNECTED": 503, "DRONE_ARMED": 409, "VERSION_MISMATCH": 409}.get(exc.code, 400)
-        message = {"FIRMWARE_REPO_NOT_CONFIGURED": "Chưa cấu hình kho firmware của nhà sản xuất", "FIRMWARE_RELEASE_UNAVAILABLE": "Không lấy được bản phát hành firmware", "ESP_NOT_CONNECTED": "Chưa kết nối ESP32", "DRONE_ARMED": "Không nạp firmware khi drone đang ARM", "VERSION_MISMATCH": "Đã có bản phát hành khác; hãy kiểm tra lại"}.get(exc.code, "Không cập nhật được firmware")
+        status = {
+            "FIRMWARE_REPO_NOT_CONFIGURED": 503,
+            "FIRMWARE_RELEASE_UNAVAILABLE": 502,
+            "ESP_NOT_CONNECTED": 503,
+            "DRONE_ARMED": 409,
+            "VERSION_MISMATCH": 409,
+            "PAYLOAD_TOO_LARGE": 413,
+            "EMPTY_FILE": 400,
+            "INVALID_MAGIC_BYTE": 400,
+        }.get(exc.code, 400)
+        message = {
+            "FIRMWARE_REPO_NOT_CONFIGURED": "Chưa cấu hình kho firmware của nhà sản xuất",
+            "FIRMWARE_RELEASE_UNAVAILABLE": "Không lấy được bản phát hành firmware",
+            "ESP_NOT_CONNECTED": "Chưa kết nối ESP32",
+            "DRONE_ARMED": "Không nạp firmware khi drone đang ARM",
+            "VERSION_MISMATCH": "Đã có bản phát hành khác; hãy kiểm tra lại",
+            "PAYLOAD_TOO_LARGE": "Kích thước tệp firmware vượt quá 4MB",
+            "EMPTY_FILE": "Tệp firmware trống (0 byte)",
+            "INVALID_MAGIC_BYTE": "Tệp firmware không hợp lệ: thiếu ESP32 magic byte 0xe9",
+        }.get(exc.code, "Không cập nhật được firmware")
         return json_error(status, exc.code, message)
 
     @app.get("/api/pi/v1/firmware/latest")
@@ -222,11 +275,68 @@ def register_extra_routes(
             return firmware_error(exc)
         return JSONResponse(status_code=202, content=envelope(job))
 
+    @app.post("/api/pi/v1/firmware/upload")
+    async def firmware_upload(request: Request) -> JSONResponse:
+        link = state.esp_link
+        arm_state = link.arm_state() if link and hasattr(link, "arm_state") else "DISARMED"
+        if arm_state == "ARMED":
+            return json_error(409, "DRONE_ARMED", "Không nạp firmware khi drone đang ARM")
+
+        content_type = request.headers.get("content-type", "")
+        content: bytes = b""
+        filename: str = "FC_can_bang.bin"
+        if "multipart/form-data" in content_type:
+            try:
+                form = await request.form()
+                upload = form.get("file")
+                if upload is None:
+                    for val in form.values():
+                        if hasattr(val, "read") or hasattr(val, "file"):
+                            upload = val
+                            break
+                if upload is not None:
+                    content = await upload.read()
+                    filename = getattr(upload, "filename", "FC_can_bang.bin") or "FC_can_bang.bin"
+                else:
+                    raw_body = await request.body()
+                    filename, content = _parse_multipart_body(raw_body, content_type)
+            except Exception:
+                raw_body = await request.body()
+                filename, content = _parse_multipart_body(raw_body, content_type)
+        else:
+            content = await request.body()
+            filename = "FC_can_bang.bin"
+
+        if not content:
+            return json_error(400, "EMPTY_FILE", "Tệp firmware trống (0 byte)")
+        if len(content) > MAX_FIRMWARE_BYTES:
+            return json_error(413, "PAYLOAD_TOO_LARGE", "Kích thước tệp firmware vượt quá 4MB")
+        if content[0] != 0xe9:
+            return json_error(400, "INVALID_MAGIC_BYTE", "Tệp firmware không hợp lệ: thiếu ESP32 magic byte 0xe9")
+
+        if state.firmware_updater is None:
+            state.firmware_updater = FirmwareUpdater(
+                repo=os.environ.get("PI_FW_GITHUB_REPO", ""),
+                link=state.esp_link,
+                arm_state=(state.esp_link.arm_state if state.esp_link and hasattr(state.esp_link, "arm_state") else (lambda: "DISARMED")),
+                device=os.environ.get("PI_ESP_USB_DEVICE") or None,
+                workdir=os.environ.get("PI_FW_WORKDIR", "/tmp/iot-firmware"),
+            )
+        else:
+            if state.firmware_updater._link is None and state.esp_link is not None:
+                state.firmware_updater._link = state.esp_link
+            if state.esp_link and hasattr(state.esp_link, "arm_state"):
+                state.firmware_updater._arm_state = state.esp_link.arm_state
+
+        try:
+            job = state.firmware_updater.upload(content, filename=filename)
+        except FirmwareUpdateError as exc:
+            return firmware_error(exc)
+
+        return JSONResponse(status_code=202, content=envelope(job))
+
     @app.get("/api/pi/v1/firmware/jobs/{job_id}")
     async def firmware_job(job_id: str, request: Request) -> JSONResponse:
-        result = await admin(request)
-        if isinstance(result, JSONResponse):
-            return result
         job = state.firmware_updater.job(job_id) if state.firmware_updater and re.fullmatch(r"[0-9a-f]{16}", job_id) else None
         if job is None:
             return json_error(404, "NOT_FOUND", "Job not found")

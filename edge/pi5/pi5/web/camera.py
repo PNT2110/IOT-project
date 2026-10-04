@@ -75,6 +75,22 @@ class MockCameraAdapter:
         if self.consumer_count == 0:
             self.stop()
 
+    def mjpeg_frames(self):
+        self.start()
+
+        def gen():
+            try:
+                while self.running:
+                    frame = self.read_frame()
+                    if frame and frame.payload:
+                        yield frame.payload
+                    else:
+                        time.sleep(0.02)
+            finally:
+                self.disconnect_consumer()
+
+        return gen
+
 
 MAX_PARTIAL_FRAME = 4 * 1024 * 1024
 
@@ -198,8 +214,10 @@ class V4L2CameraAdapter:
         self.sequence = 0
         self.last_error: tuple[CameraState, CameraErrorCode, str] | None = None
         self.streamer = MjpegStreamer(device_path)
+        self.consumer_count = 0
 
     def mjpeg_frames(self):
+        self.consumer_count += 1
         return self.streamer.frames()
 
     def status(self) -> CameraStatus:
@@ -232,4 +250,8 @@ class V4L2CameraAdapter:
         return CameraFrame(self.sequence, "image/jpeg", payload, _now())
 
     def disconnect_consumer(self) -> None:
-        self.stop()
+        self.consumer_count = max(0, self.consumer_count - 1)
+        if self.consumer_count == 0:
+            self.stop()
+            self.streamer.stop()
+

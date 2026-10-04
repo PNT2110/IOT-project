@@ -378,7 +378,9 @@ def _remember_idempotency(db: Session, *, actor_user_id: str, key: str, action: 
     db.add(IdempotencyRecord(actor_user_id=actor_user_id, idempotency_key=key, action=action, object_type=object_type, object_id=object_id, payload_digest=digest, response_json=json.dumps(data, sort_keys=True), status_code=status_code, created_at=utcnow()))
 
 
-def _iso(value: datetime) -> str:
+def _iso(value: datetime | None) -> str | None:
+    if value is None:
+        return None
     return value.astimezone(timezone.utc).isoformat() if value.tzinfo else value.replace(tzinfo=timezone.utc).isoformat()
 
 
@@ -480,7 +482,7 @@ def _store_flight_details(item: SimulatedFlightRequest, body: SimulatedFlightCre
 
 
 def _flight_view(item: SimulatedFlightRequest, settings: Settings | None = None, *, include_details: bool = False, device_name: str | None = None) -> dict:
-    result = {"id": item.id, "submitter_user_id": item.submitter_user_id, "device_id": item.device_id, "device_name": device_name, "summary": item.summary, "scheduled_start_at": _iso(item.scheduled_start_at), "scheduled_end_at": _iso(item.scheduled_end_at), "geometry": json.loads(item.simulated_geometry_json), "status": item.status, "version": item.version, "simulated": True, "authority_contract": "PC_INTERNAL_V1", "legal_status": "NOT_A_GOVERNMENT_PERMIT", "label": "PC INTERNAL DECISION — NOT A GOVERNMENT PERMIT", "source": item.source, "payload_digest": item.request_payload_digest, "updated_at": _iso(item.updated_at), "created_at": _iso(item.created_at)}
+    result = {"id": item.id, "submitter_user_id": item.submitter_user_id, "device_id": item.device_id, "device_name": device_name, "summary": item.summary, "scheduled_start_at": _iso(item.scheduled_start_at) if item.scheduled_start_at else None, "scheduled_end_at": _iso(item.scheduled_end_at) if item.scheduled_end_at else None, "geometry": json.loads(item.simulated_geometry_json) if item.simulated_geometry_json else None, "status": item.status, "version": item.version, "simulated": True, "authority_contract": "PC_INTERNAL_V1", "legal_status": "NOT_A_GOVERNMENT_PERMIT", "label": "PC INTERNAL DECISION — NOT A GOVERNMENT PERMIT", "source": item.source, "payload_digest": item.request_payload_digest, "updated_at": _iso(item.updated_at), "created_at": _iso(item.created_at)}
     if include_details and settings and item.request_details_ciphertext:
         try:
             result["request_details"] = json.loads(decrypt_secret(settings.session_secret, item.request_details_ciphertext))

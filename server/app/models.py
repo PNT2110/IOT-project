@@ -8,6 +8,7 @@ from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Ind
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
+from .security import utcnow
 
 
 def new_id() -> str:
@@ -133,7 +134,7 @@ class Zone(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
     retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
@@ -188,9 +189,9 @@ class SimulatedFlightRequest(Base):
     device_id: Mapped[Optional[str]] = mapped_column(ForeignKey("devices.id", ondelete="SET NULL"), index=True, nullable=True)
     client_ref: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     summary: Mapped[str] = mapped_column(String(240))
-    scheduled_start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    scheduled_end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    simulated_geometry_json: Mapped[str] = mapped_column(Text)
+    scheduled_start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    scheduled_end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    simulated_geometry_json: Mapped[str] = mapped_column(Text, default="null")
     status: Mapped[str] = mapped_column(String(32), default="DRAFT", index=True)
     version: Mapped[int] = mapped_column(Integer, default=1)
     simulated: Mapped[bool] = mapped_column(Boolean, default=True)

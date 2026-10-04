@@ -213,3 +213,29 @@ export function reviewFlight(id: string, version: number, reason: string, idempo
 export function decideFlight(id: string, version: number, decision: "REJECTED" | "APPROVED_SIMULATED", reason: string, idempotencyKey = `ui-flight-decision-${crypto.randomUUID()}`) {
   return request<FlightRequest>(`/api/v1/flight-requests/${id}/decision`, { method: "POST", ifMatch: version, idempotencyKey, body: JSON.stringify({ decision, reason }) });
 }
+
+export type TelemetryData = {
+  device_id?: string | null;
+  device_name?: string | null;
+  seq?: number | null;
+  observed_at?: string | null;
+  received_at?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  altitude_m?: number | null;
+  battery_pct?: number | null;
+  voltage_v?: number | null;
+  fix_state?: string | null;
+  stale?: boolean;
+};
+
+export async function getLatestTelemetry(deviceId?: string): Promise<TelemetryData | null> {
+  const path = deviceId ? `/api/v1/telemetry/latest?device_id=${encodeURIComponent(deviceId)}` : "/api/v1/telemetry/latest";
+  try {
+    const data = await request<{ telemetry: TelemetryData }>(path);
+    return data.telemetry ?? null;
+  } catch {
+    return null;
+  }
+}
+

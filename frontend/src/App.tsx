@@ -4,6 +4,7 @@ import { AuthPanel } from "./components/auth/AuthPanel";
 import { OperationsWorkspace } from "./components/operations/OperationsWorkspace";
 import { MapPanel } from "./components/map/MapPanel";
 import { AccountMenu } from "./components/account/AccountMenu";
+import { ErrorBanner } from "./components/common/ErrorBanner";
 
 export function App() {
   const [zones, setZones] = useState<Zone[]>([]);
@@ -72,7 +73,7 @@ export function App() {
             </div>
             <div className="portal-count" aria-live="polite"><strong>{zones.length}</strong><span>khu vực<br />công khai</span></div>
           </div>
-          {error && <div className="error-banner portal-error" role="alert">{error}</div>}
+          <ErrorBanner message={error} onDismiss={() => setError(null)} className="portal-error" />
           <MapPanel zones={zones} />
           {!error && zones.length === 0 ? <div className="empty-state map-empty-state"><strong>Chưa có vùng bay được công bố</strong><span>Khu vực bản đồ vẫn hoạt động; hiện chưa có dữ liệu vùng để hiển thị.</span></div> : null}
           {!error && zones.length > 0 && (

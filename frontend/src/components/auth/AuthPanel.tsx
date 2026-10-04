@@ -15,6 +15,7 @@ import {
   verifyTotp,
   type Me,
 } from "../../api";
+import { ErrorBanner } from "../common/ErrorBanner";
 
 type AuthPanelProps = { onAuthenticated: (me: Me) => void; onClose: () => void; initialBootstrapChallengeId?: string };
 type Mode = "login" | "register";
@@ -208,7 +209,7 @@ export function AuthPanel({ onAuthenticated, onClose, initialBootstrapChallengeI
           </form>
         )}
         {recoveryCodes.length > 0 && stage !== "complete" && <div className="secret-warning"><strong>Mã khôi phục — lưu offline:</strong><code>{recoveryCodes.join(" · ")}</code></div>}
-        {error && <div className="error-banner">{error}</div>}
+        <ErrorBanner message={error} onDismiss={() => setError(null)} />
         {notice && <div className="success-banner">{notice}</div>}
         {stage === "credentials" && <div className="auth-switch">{mode === "login" ? "Chưa có tài khoản?" : "Đã có tài khoản?"}<button type="button" onClick={() => reset(mode === "login" ? "register" : "login")}>{mode === "login" ? "Đăng ký" : "Đăng nhập"}</button></div>}
       </section>

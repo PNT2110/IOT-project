@@ -79,6 +79,7 @@ def create_app(settings: Settings | None = None, *, initialize_schema: bool = Fa
     app.state.registration_failures = {}
     app.state.auth_challenge_failures = {}
     app.state.device_nonces = {}
+    app.state.latest_telemetry = {}
     app.add_middleware(CORSMiddleware, allow_origins=list(settings.allowed_origins), allow_credentials=True, allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type", "If-Match", "Idempotency-Key", "X-CSRF-Token", "X-Request-ID"])
 
     @app.middleware("http")
@@ -165,7 +166,10 @@ def create_app(settings: Settings | None = None, *, initialize_schema: bool = Fa
         logger.exception("Unhandled request error request_id=%s", getattr(request.state, "request_id", ""), exc_info=exc)
         return JSONResponse(status_code=500, content={"schema_version": "v1", "request_id": getattr(request.state, "request_id", ""), "data": None, "error": {"code": "INTERNAL_ERROR", "message_for_user": "An internal server error occurred"}, "observed_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()})
 
+    from .routers import telemetry
+
     app.include_router(build_router())
+    app.include_router(telemetry.router, prefix="/api/v1")
     return app
 
 

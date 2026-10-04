@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from ..device_crypto import DeviceAuthError, open_sealed
 from ..models import Device
-from ..schemas import DeviceEnvelope, DeviceFlightPayload
+from ..schemas import DeviceEnvelope, DeviceFlightPayload, TelemetryPayload
 from .deps import *  # noqa: F401,F403
 
 router = APIRouter()
@@ -107,3 +107,27 @@ def device_flight_request_status(request_id: str, envelope: DeviceEnvelope, requ
         reason = decision.reason if decision else None
         decided_at = _iso(item.updated_at)
     return ok({"request_id": item.id, "status": status_value, "reason": reason, "decided_at": decided_at}, request.state.request_id, _now_iso())
+
+
+@router.post("/device/telemetry", status_code=200)
+def device_push_telemetry(
+    envelope: DeviceEnvelope,
+    request: Request,
+    db: Session = Depends(_db),
+):
+    device, raw = _open(request, db, envelope)
+    try:
+        sample = TelemetryPayload.model_validate(raw)
+        data = sample.model_dump()
+    except ValidationError:
+        data = dict(raw) if isinstance(raw, dict) else {}
+    data["device_id"] = device.id
+    data["device_name"] = device.name
+    data["received_at"] = utcnow().isoformat()
+    if not hasattr(request.app.state, "latest_telemetry"):
+        request.app.state.latest_telemetry = {}
+    request.app.state.latest_telemetry[device.id] = data
+    request.app.state.latest_telemetry["__latest__"] = data
+    return ok({"stored": True, "device_id": device.id}, request.state.request_id, _now_iso())
+
+

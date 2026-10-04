@@ -8,6 +8,7 @@ import {
   type Me,
   type ProfileUpdateRequest,
 } from "../../api";
+import { ErrorBanner } from "../common/ErrorBanner";
 
 type AccountMenuProps = { user: Me; onLogout: () => void; onUpdated: (user: Me) => void };
 type ProfileStage = "form" | "current-email" | "new-email";
@@ -163,7 +164,7 @@ function ProfileDialog({ user, onClose, onUpdated }: { user: Me; onClose: () => 
           <label>Mã OTP email<input value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" pattern="[0-9]{6}" autoComplete="one-time-code" autoFocus required /></label>
           <div className="profile-dialog-actions"><button className="primary-button" type="submit" disabled={busy || otp.length !== 6}>{busy ? "Đang xác nhận…" : "Xác nhận thay đổi"}</button><button className="ghost-button" type="button" onClick={onClose} disabled={busy}>Hủy</button></div>
         </form>}
-        {error && <div className="error-banner" role="alert">{error}</div>}
+        <ErrorBanner message={error || null} onDismiss={() => setError("")} />
         {notice && <div className="success-banner" role="status">{notice}</div>}
       </section>
     </div>
